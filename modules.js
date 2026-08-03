@@ -89,8 +89,7 @@ window.ALGORA_MODULES = [
    书写 level 字段，此段仅作基线归一化，后续可由质检报告驱动改写。
    ============================================================ */
 (function markLevels() {
-  const L1 = new Set([
-    // 链表：6 个共享 linkedTrace（文档 B：需错误顺序演示）
+  const L1 = new Set([    // 链表：6 个共享 linkedTrace（文档 B：需错误顺序演示）
     'singly-list-no-head', 'singly-list-head',
     'doubly-list-no-head', 'doubly-list-head',
     'circular-singly-list', 'circular-doubly-list',
@@ -103,7 +102,12 @@ window.ALGORA_MODULES = [
     // 树：共享 bstTrace（文档 D P0：红黑修复 / B 树借位合并；avl 已于 I1-A 升级为专属 L3）
     'red-black-tree', 'b-tree'
   ]);
+  // I2-D：排序 9 模块已具备实验输入集 + 成本统计 + 稳定性轨迹 → L3 精讲
+  const L3 = new Set([
+    'insertion-sort', 'binary-insertion-sort', 'shell-sort', 'bubble-sort',
+    'quick-sort', 'selection-sort', 'heap-sort', 'merge-sort', 'radix-sort'
+  ]);
   window.ALGORA_MODULES.forEach((m) => {
-    if (m.level === undefined) m.level = L1.has(m.id) ? 'L1' : 'L2';
+    if (m.level === undefined) m.level = L3.has(m.id) ? 'L3' : (L1.has(m.id) ? 'L1' : 'L2');
   });
 })();
