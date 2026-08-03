@@ -64,12 +64,12 @@ const uncovered = MODS.filter((m) => {
 const covered = MODS.length - uncovered.length;
 check(`模块全覆盖（${covered}/${MODS.length} ≥ 95%）`, covered / MODS.length >= 0.95, uncovered.join(', '));
 
-console.log('—— demo 级精细化（I8-C：关键模块专属题）——');
-const demoTagSet = new Set(['avl', 'red-black', 'b-tree', 'kmp', 'binary-search', 'quick-sort', 'huffman', 'circular-queue', 'hash-chain', 'linked-stack', 'dijkstra', 'bst']);
+console.log('—— demo 级精细化（I8-C/I9-C：关键模块专属题）——');
+const demoTagSet = new Set(['avl', 'red-black', 'b-tree', 'kmp', 'binary-search', 'quick-sort', 'huffman', 'circular-queue', 'hash-chain', 'linked-stack', 'dijkstra', 'bst', 'sequence', 'stack', 'deque', 'symmetric', 'tridiagonal', 'sparse', 'naive-match', 'bfs', 'dfs', 'floyd', 'topological', 'array-queue']);
 const demoTagged = all.filter((q) => q.tag && demoTagSet.has(q.tag));
-check(`demo 级专属题 ≥ 8 个（实际 ${demoTagged.length}）`, demoTagged.length >= 8, JSON.stringify(demoTagged.map((q) => q.tag)));
+check(`demo 级专属题 ≥ 18 个（实际 ${demoTagged.length}）`, demoTagged.length >= 18, JSON.stringify(demoTagged.map((q) => q.tag)));
 check('demo 题 tag 可被模块 demo 匹配', MODS.some((m) => m.demo && demoTagged.some((q) => q.tag === m.demo)));
-check('demo 级题覆盖 ≥ 6 个关键模块', new Set(demoTagged.map((q) => q.tag)).size >= 6);
+check('demo 级题覆盖 ≥ 15 个模块', new Set(demoTagged.map((q) => q.tag)).size >= 15);
 
 console.log('—— 题型语义抽查 ——');
 check('predict 题可预测输出', EX.predict.some((q) => /数组|结果是|结束后/.test(q.question)));
