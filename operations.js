@@ -42,8 +42,16 @@ function linkedTrace(raw,action,m){
  else {for(let i=head?1:0;i<base.length;i++){frames.push(F(V(base,[i],action==='search'&&i===pos?{found:[i]}:{}),action==='access'?`沿 next 指针访问第 ${i-(head?1:0)} 个结点`:action==='search'?`比较结点值 ${base[i]} 与目标 ${base[pos]}`:`访问结点 ${base[i]}`,1,{p:i,value:base[i]}));if(action==='access'&&i===pos)break;}if(action==='search')frames.push(F(V(base,[pos],{found:[pos],success:true}),'找到目标结点',2,{result:pos}));}
  return {frames};
 }
-function linearTrace(raw,action,type){
- const a=nums(raw,[14,27,39]), isStack=type==='stack', frames=[];const V=(values,active=[],extra={})=>({type,values,active,...extra});
+function linearTrace(raw,action,type,linked=false){
+ const a=nums(raw,[14,27,39]), isStack=type==='stack', frames=[];
+ const V=(values,active=[],extra={})=>{
+   if(linked){
+     // 链栈/链队列：结点 + 指针视图（文档工作流 B：不再复用数组方块视图）
+     const ptrs=isStack?{topIndex:values.length-1}:{frontIndex:0,rearIndex:Math.max(0,values.length-1)};
+     return {type:'linked',values,active,linkedStack:isStack,linkedQueue:!isStack,...ptrs,...extra};
+   }
+   return {type,values,active,...extra};
+ };
  if(action==='create'){frames.push(F(V([]),'初始化空结构',0,{size:0}));let w=[];a.forEach((x,i)=>{w=[...w,x];frames.push(F(V(w,[w.length-1],{inserted:[w.length-1]}),`加入元素 ${x}`,1,{size:i+1}));});}
  else if(['push','enqueue','push-front','push-back'].includes(action)){let w=a.slice();const front=action==='push-front';w=front?[88,...w]:[...w,88];frames.push(F(V(a),'检查容量与边界',0));frames.push(F(V(w,[front?0:w.length-1],{inserted:[front?0:w.length-1]}),`${front?'队头':'末端'}加入 88`,1,{size:w.length}));}
  else if(['pop','dequeue','pop-front','pop-back'].includes(action)){const back=action==='pop'||action==='pop-back';const idx=back?a.length-1:0;frames.push(F(V(a,[idx]),`读取将被删除的元素 ${a[idx]}`,0,{result:a[idx]}));let w=a.slice();back?w.pop():w.shift();frames.push(F(V(w,[],{success:true}),'移动边界指针，删除完成',1,{size:w.length}));}
@@ -58,8 +66,8 @@ function hashOp(raw,action,m){if(action==='insert'&&m.demo.startsWith('hash'))re
 function genericOp(m,raw,action){
  if(m.type==='linked')return linkedTrace(raw,action,m);
  if(m.id==='sequence-list'||m.id==='static-list')return arrayTrace(raw,action);
- if(m.type==='stack')return linearTrace(raw,action,'stack');
- if(m.type==='queue')return linearTrace(raw,action,'queue');
+ if(m.type==='stack')return linearTrace(raw,action,'stack',m.id.startsWith('linked-'));
+ if(m.type==='queue')return linearTrace(raw,action,'queue',m.id.startsWith('linked-'));
  if(m.type==='matrix')return matrixOp(raw,action);
  if(m.type==='tree'||m.type==='btree'||m.id==='level-order')return treeOp(action);
  if(m.type==='graph')return graphOp(action,m);
