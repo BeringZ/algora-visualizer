@@ -23,6 +23,12 @@ vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), sandbox, { filename: f });
 });
 
+sandbox.window.AlgoraValidators = {
+  validateBST: require('./validators/validateBST.js').validateBST,
+  validateAVL: require('./validators/validateAVL.js').validateAVL,
+  validateCircularQueue: require('./validators/validateCircularQueue.js').validateCircularQueue,
+  validateLinkedList: require('./validators/validateLinkedList.js').validateLinkedList,
+};
 const W = sandbox.window;
 const avlModule = W.ALGORA_MODULES.find((m) => m.id === 'avl');
 if (!avlModule) { console.error('未找到 avl 模块'); process.exit(1); }
