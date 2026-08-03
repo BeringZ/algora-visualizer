@@ -690,12 +690,15 @@
 
   // ===== 练习系统（I5-B · 工作流 G：预测/状态/找错/构造四类题） =====
   const QUIZ_STATE = { type: 'predict', idx: 0, answered: false };
+  // I7-C：category → 题库 tag 归一化（list→linked、stack-queue→queue，新增 array/string/search）
+  const CATEGORY_TAG = { 'list': 'linked', 'stack-queue': 'queue', 'array': 'array', 'string': 'string', 'search': 'search', 'sort': 'sort', 'tree': 'tree', 'graph': 'graph' };
   function quizPool(type) {
     const pool = (window.ALGORA_EXERCISES && window.ALGORA_EXERCISES[type]) || [];
     if (!pool.length) return [];
-    // 优先 tag 匹配当前模块，其次通用
+    // 优先 tag 匹配当前模块（demo 直接匹配 / category 归一化后匹配），其次通用
     const m = state.module;
-    const tagged = pool.filter((q) => q.tag === m.demo || (m.category && q.tag === m.category.replace('-sort', '').replace('-tree', '')));
+    const catTag = m.category ? CATEGORY_TAG[m.category] : null;
+    const tagged = pool.filter((q) => q.tag === m.demo || (catTag && q.tag === catTag));
     const generic = pool.filter((q) => !q.tag);
     return [...tagged, ...generic].length ? [...tagged, ...generic] : pool;
   }
