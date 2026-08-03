@@ -143,6 +143,7 @@
                 <div class="message-bar">
                   <div class="message-main"><span class="step-badge" id="step-badge">1</span><div class="message-text" id="message-text"></div></div>
                   <div class="message-vars" id="message-vars"></div>
+                  <div class="frame-meta" id="frame-meta" hidden></div>
                 </div>
               </article>
               <article class="panel code-panel">
@@ -379,12 +380,46 @@
     const variables=collectVariables(f);
     $('#variable-list').innerHTML=variables.map(([k,v])=>`<div class="variable-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(formatVariable(v))}</strong></div>`).join('') || '<div class="variable-empty">当前步骤无显式变量</div>';
     $('#message-vars').textContent=variables.map(([k,v])=>`${k}=${formatVariable(v)}`).join('  ');
+    renderFrameMeta(f);
     $('#code-wrap').innerHTML=language.lines.map((line,i)=>`<div class="code-line ${activeLines.includes(i)?'active':''}" data-line="${i}"><span class="line-number">${i+1}</span><code>${highlightCode(line,state.language)}</code></div>`).join('');
     const active=$('.code-line.active'); const codeWrap=$('#code-wrap');
     if(active && codeWrap) codeWrap.scrollTo({top:Math.max(0,active.offsetTop-codeWrap.clientHeight/2),behavior:'smooth'});
     $('#prev-step').disabled=state.index===0;
     $('#reset-step').disabled=state.index===0;
     $('#next-step').disabled=state.index===state.trace.frames.length-1;
+  }
+
+  // 帧语义信息条（I1-A：phase / condition / mutation / invariantChecks / cost / 验证结果）
+  const PHASE_LABEL = { locate: '定位', mutate: '修改', repair: '修复', verify: '验证', init: '初始化', cleanup: '收尾' };
+  const MUTATION_LABEL = { rotateRight: '右旋', rotateLeft: '左旋', rotate: '旋转', 'double-rotate': '双旋', insert: '插入', allocate: '分配', delete: '删除', swap: '交换', write: '写入' };
+  function renderFrameMeta(f) {
+    const box = $('#frame-meta');
+    if (!box) return;
+    const m = f._meta;
+    if (!m) { box.hidden = true; box.innerHTML = ''; return; }
+    const chips = [];
+    if (m.phase) chips.push(`<span class="fm-chip fm-phase">阶段：${PHASE_LABEL[m.phase] || m.phase}</span>`);
+    if (m.condition) chips.push(`<span class="fm-chip fm-cond">判断：${escapeHtml(m.condition)}</span>`);
+    if (m.mutation && m.mutation.type) chips.push(`<span class="fm-chip fm-mut">操作：${MUTATION_LABEL[m.mutation.type] || m.mutation.type}${m.mutation.targets ? ' → ' + m.mutation.targets.join(', ') : ''}</span>`);
+    if (m.invariantChecks && m.invariantChecks.length) chips.push(`<span class="fm-chip fm-inv">不变量：${m.invariantChecks.join(' · ')}</span>`);
+    if (m.cost) {
+      const c = m.cost;
+      const parts = [];
+      if (c.comparisons) parts.push(`比较 ${c.comparisons}`);
+      if (c.reads) parts.push(`读 ${c.reads}`);
+      if (c.writes) parts.push(`写 ${c.writes}`);
+      if (c.swaps) parts.push(`交换 ${c.swaps}`);
+      if (c.allocations) parts.push(`分配 ${c.allocations}`);
+      if (parts.length) chips.push(`<span class="fm-chip fm-cost">成本：${parts.join(' · ')}</span>`);
+    }
+    if (f._meta.invariantResult) {
+      const r = f._meta.invariantResult;
+      chips.push(r.ok
+        ? `<span class="fm-chip fm-result ok">结构验证：通过 ✓</span>`
+        : `<span class="fm-chip fm-result bad">结构验证：破坏 ✗ ${escapeHtml(r.violations.map(v => v.detail).join('；'))}</span>`);
+    }
+    if (chips.length) { box.innerHTML = chips.join(''); box.hidden = false; }
+    else { box.hidden = true; box.innerHTML = ''; }
   }
 
   function collectVariables(frame) {
