@@ -64,6 +64,13 @@ const uncovered = MODS.filter((m) => {
 const covered = MODS.length - uncovered.length;
 check(`模块全覆盖（${covered}/${MODS.length} ≥ 95%）`, covered / MODS.length >= 0.95, uncovered.join(', '));
 
+console.log('—— demo 级精细化（I8-C：关键模块专属题）——');
+const demoTagSet = new Set(['avl', 'red-black', 'b-tree', 'kmp', 'binary-search', 'quick-sort', 'huffman', 'circular-queue', 'hash-chain', 'linked-stack', 'dijkstra', 'bst']);
+const demoTagged = all.filter((q) => q.tag && demoTagSet.has(q.tag));
+check(`demo 级专属题 ≥ 8 个（实际 ${demoTagged.length}）`, demoTagged.length >= 8, JSON.stringify(demoTagged.map((q) => q.tag)));
+check('demo 题 tag 可被模块 demo 匹配', MODS.some((m) => m.demo && demoTagged.some((q) => q.tag === m.demo)));
+check('demo 级题覆盖 ≥ 6 个关键模块', new Set(demoTagged.map((q) => q.tag)).size >= 6);
+
 console.log('—— 题型语义抽查 ——');
 check('predict 题可预测输出', EX.predict.some((q) => /数组|结果是|结束后/.test(q.question)));
 check('debug 题含错误代码场景', EX.debug.some((q) => /代码|panic|错误/.test(q.question)));
