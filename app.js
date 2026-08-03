@@ -227,10 +227,17 @@
       <article class="info-card"><h3>常见易错点</h3><ul class="info-list">${tips.errors.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul></article>
     </section>
     <section class="quiz-card">
-      <h3>一分钟自测</h3>
-      <p>${escapeHtml(tips.question)}</p>
-      <div class="quiz-options">${tips.options.map((o,i)=>`<button class="quiz-option" data-answer="${i}">${escapeHtml(o)}</button>`).join('')}</div>
+      <h3>练习系统 · 四类题</h3>
+      <div class="quiz-tabs" id="quiz-tabs">
+        ${['predict','state','debug','construct'].map((k,i)=>`<button class="quiz-tab ${i===0?'active':''}" data-qtype="${k}">${['预测结果','状态判断','错误排查','构造输入'][i]}</button>`).join('')}
+      </div>
+      <p class="quiz-question" id="quiz-question"></p>
+      <div class="quiz-options" id="quiz-options"></div>
       <div class="quiz-feedback" id="quiz-feedback"></div>
+      <div class="quiz-controls">
+        <button class="secondary-btn" id="quiz-next">换一题</button>
+        <span class="quiz-hint" id="quiz-hint"></span>
+      </div>
       <button class="primary-btn" id="mark-complete">${state.completed.includes(state.module.id)?'✓ 已完成':'标记本模块为已完成'}</button>
     </section>`;
   }
@@ -324,7 +331,7 @@
       bindSidebarEvents();
     };
     bindSidebarEvents();
-    $$('.quiz-option').forEach(btn=>btn.onclick=()=>answerQuiz(btn));
+    initQuiz();
     $('#mark-complete').onclick = toggleComplete;
   }
 
@@ -681,12 +688,45 @@
     return `<div class="hash-visual">${v.buckets.map((bucket,i)=>`<div class="hash-row"><span class="hash-index ${i===v.active?'active':''}">${i}</span><div class="hash-bucket">${bucket.map(x=>`<span class="hash-value">${x}</span>`).join(v.chaining?'<span>→</span>':'')||'<span style="color:var(--muted)">空</span>'}</div></div>`).join('')}</div>`;
   }
 
-  function answerQuiz(btn) {
-    $$('.quiz-option').forEach(b=>b.classList.remove('correct','wrong'));
-    const correct=Number(btn.dataset.answer)===0;
-    btn.classList.add(correct?'correct':'wrong');
-    if(!correct) $('.quiz-option[data-answer="0"]').classList.add('correct');
-    $('#quiz-feedback').textContent=correct?'回答正确。复杂度应结合具体操作和数据规模分析。':'答案不正确。请回看右侧复杂度卡片和动画过程。';
+  // ===== 练习系统（I5-B · 工作流 G：预测/状态/找错/构造四类题） =====
+  const QUIZ_STATE = { type: 'predict', idx: 0, answered: false };
+  function quizPool(type) {
+    const pool = (window.ALGORA_EXERCISES && window.ALGORA_EXERCISES[type]) || [];
+    if (!pool.length) return [];
+    // 优先 tag 匹配当前模块，其次通用
+    const m = state.module;
+    const tagged = pool.filter((q) => q.tag === m.demo || (m.category && q.tag === m.category.replace('-sort', '').replace('-tree', '')));
+    const generic = pool.filter((q) => !q.tag);
+    return [...tagged, ...generic].length ? [...tagged, ...generic] : pool;
+  }
+  function renderQuiz() {
+    const pool = quizPool(QUIZ_STATE.type);
+    const q = pool[QUIZ_STATE.idx % Math.max(1, pool.length)];
+    const qEl = $('#quiz-question'), oEl = $('#quiz-options'), fEl = $('#quiz-feedback');
+    if (!q) { qEl.textContent = '暂无该类题目'; oEl.innerHTML = ''; fEl.textContent = ''; return; }
+    qEl.textContent = q.question;
+    oEl.innerHTML = q.options.map((o, i) => `<button class="quiz-option" data-qid="${q.id}" data-opt="${i}">${escapeHtml(o)}</button>`).join('');
+    fEl.textContent = '';
+    $('#quiz-hint').textContent = `第 ${(QUIZ_STATE.idx % pool.length) + 1}/${pool.length} 题`;
+    $$('.quiz-option').forEach((btn) => { btn.onclick = () => answerQuiz(btn, q); });
+    QUIZ_STATE.answered = false;
+  }
+  function answerQuiz(btn, q) {
+    if (QUIZ_STATE.answered) return;
+    QUIZ_STATE.answered = true;
+    $$('.quiz-option').forEach((b) => b.classList.remove('correct', 'wrong'));
+    const correct = Number(btn.dataset.opt) === q.answer;
+    btn.classList.add(correct ? 'correct' : 'wrong');
+    if (!correct) $$(`.quiz-option[data-opt="${q.answer}"]`).forEach((b) => b.classList.add('correct'));
+    $('#quiz-feedback').innerHTML = `<span class="${correct ? 'correct' : 'wrong'}">${correct ? '✓ 回答正确' : '✗ 答案不正确'}</span> ${escapeHtml(q.feedback)}`;
+  }
+  function initQuiz() {
+    renderQuiz();
+    $$('.quiz-tab').forEach((btn) => btn.onclick = () => {
+      $$('.quiz-tab').forEach((b) => b.classList.toggle('active', b === btn));
+      QUIZ_STATE.type = btn.dataset.qtype; QUIZ_STATE.idx = 0; renderQuiz();
+    });
+    $('#quiz-next').onclick = () => { QUIZ_STATE.idx++; renderQuiz(); };
   }
 
   function toggleComplete() {
