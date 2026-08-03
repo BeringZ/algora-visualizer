@@ -44,7 +44,7 @@ window.ALGORA_MODULES = [
   { id:'bst', category:'tree', title:'二叉排序树', type:'tree', demo:'bst', time:'平均 O(log n) / 最坏 O(n)', space:'O(n)', tags:['BST','查找'], summary:'左子树键值更小，右子树键值更大。' },
   { id:'huffman', category:'tree', title:'哈夫曼树', type:'tree', demo:'huffman', time:'O(n log n)', space:'O(n)', tags:['贪心','编码'], summary:'反复合并权值最小的两棵树，构造最优前缀编码。' },
   { id:'threaded-tree', category:'tree', title:'线索二叉树', type:'tree', demo:'threaded', time:'线性遍历 O(n)', space:'O(1) 额外', tags:['线索化'], summary:'利用空指针域保存遍历前驱或后继，减少栈与递归开销。' },
-  { id:'avl', category:'tree', title:'AVL 平衡二叉树', type:'tree', demo:'avl', time:'O(log n)', space:'O(n)', tags:['AVL','旋转'], summary:'通过 LL、RR、LR、RL 旋转维持结点平衡因子。' },
+  { id:'avl', category:'tree', title:'AVL 平衡二叉树', type:'tree', demo:'avl', level:'L3', time:'O(log n)', space:'O(n)', tags:['AVL','旋转'], summary:'通过 LL、RR、LR、RL 旋转维持结点平衡因子。' },
 
   { id:'adjacency-matrix', category:'graph', title:'图 · 邻接矩阵', type:'graph', demo:'adj-matrix', time:'查边 O(1)', space:'O(V²)', tags:['图','存储'], summary:'用二维矩阵表示顶点之间是否存在边及其权值。' },
   { id:'adjacency-list', category:'graph', title:'图 · 邻接表', type:'graph', demo:'adj-list', time:'遍历邻边 O(deg(v))', space:'O(V+E)', tags:['图','存储'], summary:'每个顶点保存一条邻接边链表，更适合稀疏图。' },
@@ -101,8 +101,8 @@ window.ALGORA_MODULES = [
     'circular-queue', 'deque',
     // 树：共享 treeTrace（文档 D：专属操作与不变量）
     'binary-tree', 'level-order', 'threaded-tree',
-    // 树：共享 bstTrace（文档 D P0：AVL 四旋转 / 红黑修复 / B 树借位合并）
-    'avl', 'red-black-tree', 'b-tree'
+    // 树：共享 bstTrace（文档 D P0：红黑修复 / B 树借位合并；avl 已于 I1-A 升级为专属 L3）
+    'red-black-tree', 'b-tree'
   ]);
   window.ALGORA_MODULES.forEach((m) => {
     if (m.level === undefined) m.level = L1.has(m.id) ? 'L1' : 'L2';
