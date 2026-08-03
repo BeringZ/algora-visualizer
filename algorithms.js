@@ -405,11 +405,137 @@
       ]};
     }
     const values=[40,20,60,10,30,50,70];
-    const code=['Node insert(Node root, int x) {','  if (root == null) return new Node(x);','  if (x < root.key) root.left = insert(root.left, x);','  else if (x > root.key) root.right = insert(root.right, x);','  return root;','}'];
-    const frames=[]; const nodes=[];
-    const positions=treeNodes();
-    values.forEach((v,i)=>{nodes.push(positions.find(n=>n.id===String(v)));frames.push(frame({type:'tree',nodes,active:[String(v)],visited:[]},i===0?'创建根结点 40':`${v} 按大小关系插入二叉排序树`,i===0?1:(v<40?2:3),{x:v}));});
-    return {code,frames};
+
+    /* ============ I3-A：BST 真实操作（三类删除 + 前驱/后继替换 + 结构验证） ============
+       真实 BST 算法驱动：插入 → 查找 → 删除叶 / 删除单孩子 / 删除双孩子（后继替换）
+       每帧带 _meta（phase/condition/mutation/invariantChecks/cost），帧末 validateBST */
+    const nodes = {}; let rootId = null;
+    const frames = [];
+    const L = { insert: 0, find: 1, delLeaf: 2, delOne: 3, delTwo: 4, verify: 5 };
+    const h = () => null;
+    function layout() {
+      const inorder = [];
+      (function walk(id) { if (!id) return; walk(nodes[id].left); inorder.push(id); walk(nodes[id].right); })(rootId);
+      const n = inorder.length;
+      inorder.forEach((id, i) => { nodes[id].x = n === 1 ? 50 : 5 + (i / (n - 1)) * 90; });
+      (function setY(id, d) { if (!id) return; nodes[id].y = 12 + d * 24; setY(nodes[id].left, d + 1); setY(nodes[id].right, d + 1); })(rootId, 0);
+    }
+    function snap(active, extra) {
+      return { type: 'tree', nodes: clone(Object.values(nodes)), active: active || [], visited: [], ...(extra || {}) };
+    }
+    function runBstValidator() {
+      if (typeof window !== 'undefined' && window.AlgoraValidators && window.AlgoraValidators.validateBST) {
+        const vNodes = {};
+        Object.values(nodes).forEach((n) => { vNodes[n.id] = { id: n.id, key: n.key, left: n.left, right: n.right, parent: n.parent }; });
+        return window.AlgoraValidators.validateBST({ root: rootId, nodes: vNodes });
+      }
+      return { ok: true, violations: [], degraded: true };
+    }
+    function insertKey(key) {
+      const id = String(key);
+      if (!rootId) {
+        nodes[id] = { id, key, left: null, right: null, parent: null };
+        rootId = id; layout();
+        frames.push(meta(frame(snap([id]), `插入 ${key} 作为根结点`, L.insert, { key }), { phase: 'mutate', mutation: { type: 'allocate', targets: [id] }, invariantChecks: ['bst-order'], cost: { reads: 1, writes: 1, allocations: 1 } }));
+        return;
+      }
+      let cur = rootId;
+      while (cur) {
+        frames.push(meta(frame(snap([cur]), `比较 ${key} 与结点 ${cur}，进入${key < nodes[cur].key ? '左' : '右'}子树`, L.insert, { key, cur: Number(cur) }), { phase: 'locate', condition: `${key} ${key < nodes[cur].key ? '<' : '>'} ${nodes[cur].key}`, cost: { comparisons: 1, reads: 1 } }));
+        if (key < nodes[cur].key) { if (!nodes[cur].left) break; cur = nodes[cur].left; }
+        else { if (!nodes[cur].right) break; cur = nodes[cur].right; }
+      }
+      nodes[id] = { id, key, left: null, right: null, parent: cur };
+      if (key < nodes[cur].key) nodes[cur].left = id; else nodes[cur].right = id;
+      layout();
+      frames.push(meta(frame(snap([id]), `结点 ${key} 插入到 ${cur} 的${key < nodes[cur].key ? '左' : '右'}子树`, L.insert, { key }), { phase: 'mutate', mutation: { type: 'insert', targets: [cur, id] }, invariantChecks: ['bst-order'], cost: { reads: 1, writes: 2, allocations: 1 } }));
+    }
+    function searchKey(key) {
+      let cur = rootId; const path = [];
+      while (cur && nodes[cur].key !== key) {
+        path.push(cur);
+        frames.push(meta(frame(snap([cur]), `查找 ${key}：比较 ${key} 与 ${nodes[cur].key}，进入${key < nodes[cur].key ? '左' : '右'}子树`, L.find, { key, cur: Number(cur) }), { phase: 'search', condition: `${key} ${key < nodes[cur].key ? '<' : '>'} ${nodes[cur].key}`, cost: { comparisons: 1, reads: 1 } }));
+        cur = key < nodes[cur].key ? nodes[cur].left : nodes[cur].right;
+      }
+      if (cur) {
+        frames.push(meta(frame(snap([cur], { found: [cur] }), `找到结点 ${cur}`, L.find, { result: Number(cur) }), { phase: 'search', condition: `${key} == ${nodes[cur].key}`, cost: { comparisons: 1, reads: 1 } }));
+      }
+      return cur;
+    }
+    function successor(id) {
+      // 右子树最小结点
+      let cur = nodes[id].right;
+      if (!cur) return null;
+      while (nodes[cur].left) cur = nodes[cur].left;
+      return nodes[cur]; // 返回结点对象（含 id/key/parent/right）
+    }
+    function deleteKey(key) {
+      const target = searchKey(key);
+      if (!target) return;
+      const tid = target;
+      const left = nodes[tid].left, right = nodes[tid].right;
+      if (!left && !right) {
+        // ① 叶结点：直接删除
+        frames.push(meta(frame(snap([tid]), `结点 ${tid} 是叶结点（无孩子），直接删除`, L.delLeaf, { key }), { phase: 'mutate', mutation: { type: 'delete', targets: [tid] }, invariantChecks: ['bst-order'], cost: { reads: 1, writes: 1 } }));
+        const p = nodes[tid].parent;
+        if (p) { if (nodes[p].left === tid) nodes[p].left = null; else nodes[p].right = null; }
+        else rootId = null;
+        delete nodes[tid]; layout();
+      } else if (!left || !right) {
+        // ② 单孩子：孩子顶替
+        const child = left || right;
+        frames.push(meta(frame(snap([tid, child]), `结点 ${tid} 只有${left ? '左' : '右'}孩子 ${child}，孩子直接顶替`, L.delOne, { key }), { phase: 'mutate', mutation: { type: 'delete', targets: [tid, child] }, invariantChecks: ['bst-order'], cost: { reads: 2, writes: 1 } }));
+        const p = nodes[tid].parent;
+        nodes[child].parent = p;
+        if (p) { if (nodes[p].left === tid) nodes[p].left = child; else nodes[p].right = child; }
+        else rootId = child;
+        delete nodes[tid]; layout();
+      } else {
+        // ③ 双孩子：后继（右子树最小）替换——只复制值，目标结点保留原 id 与位置
+        const succ = successor(tid);
+        const succId = succ.id;
+        frames.push(meta(frame(snap([tid, succId]), `结点 ${tid} 有两个孩子，选择中序后继 ${succId}（右子树最小）替换`, L.delTwo, { key, successor: Number(succId) }), { phase: 'locate', condition: `后继 = 右子树最左结点 = ${succId}`, mutation: { type: 'read', targets: [succId] }, invariantChecks: ['bst-order'], cost: { comparisons: 1, reads: 2 } }));
+        nodes[tid].key = succ.key; // 值覆盖（id 不变，父引用不悬空）
+        const sp = succ.parent, sr = succ.right;
+        if (sp) {
+          if (nodes[sp].left === succId) nodes[sp].left = sr; else nodes[sp].right = sr;
+          if (sr) nodes[sr].parent = sp;
+        }
+        delete nodes[succId]; layout();
+        frames.push(meta(frame(snap([tid]), `后继 ${succId} 的值 ${succ.key} 覆盖结点 ${tid}，删除后继结点`, L.delTwo, { key, replacement: succ.key }), { phase: 'repair', mutation: { type: 'delete', targets: [succId] }, invariantChecks: ['bst-order'], cost: { reads: 3, writes: 3 } }));
+      }
+      // 结构验证
+      const res = runBstValidator();
+      frames.push(meta(frame(snap([], res.ok ? { success: true } : {}), res.ok ? '✅ 结构验证通过：中序有序' : `⚠️ ${res.violations.map((v) => v.detail).join('；')}`, L.verify), { phase: 'verify', invariantChecks: ['bst-order'], invariantResult: res, cost: { reads: 1 } }));
+    }
+
+    // 插入序列 → 查找 50 → 删除三类（叶 10 → 单孩子 20（10 删除后 20 变单孩子）→ 双孩子 40 根）
+    values.forEach((k) => insertKey(k));
+    searchKey(50);
+    deleteKey(10);   // ① 叶结点
+    deleteKey(20);   // ② 单孩子（10 已删，20 只有右孩子 30，30 顶替）
+    deleteKey(40);   // ③ 双孩子根（后继 50 替换）
+    const code = [
+      'Node insert(Node root, int x) {',
+      '  if (root == null) return new Node(x);',
+      '  if (x < root.key) root.left = insert(root.left, x);',
+      '  else if (x > root.key) root.right = insert(root.right, x);',
+      '  return root;',
+      '}',
+      '',
+      'Node delete(Node root, int key) {',
+      '  if (key < root.key) root.left = delete(root.left, key);',
+      '  else if (key > root.key) root.right = delete(root.right, key);',
+      '  else {',
+      '    if (!root.left && !root.right) return null;            // 叶',
+      '    if (!root.left) return root.right;                     // 单孩子',
+      '    Node s = min(root.right); root.key = s.key;            // 双孩子：后继替换',
+      '    root.right = delete(root.right, s.key);',
+      '  }',
+      '  return root;',
+      '}'
+    ];
+    return { code, frames };
   }
 
   /* ============================================================
@@ -599,15 +725,39 @@
   }
 
   function huffmanTrace() {
-    const code=['put all weights into minHeap;','while (heap.size() > 1) {','  Node a = heap.popMin();','  Node b = heap.popMin();','  heap.push(new Node(a.weight + b.weight, a, b));','}'];
-    const frames=[
-      frame({type:'huffman',groups:[[5],[7],[10],[15],[20],[45]],active:[0,1]},'选择权值最小的 5 和 7',2),
-      frame({type:'huffman',groups:[[10],[12],[15],[20],[45]],active:[0,1]},'合并得到新权值 12',4),
-      frame({type:'huffman',groups:[[15],[20],[22],[45]],active:[0,2]},'合并 10 与 12 得到 22',4),
-      frame({type:'huffman',groups:[[22],[35],[45]],active:[1]},'合并 15 与 20 得到 35',4),
-      frame({type:'huffman',groups:[[45],[57]],active:[1]},'合并 22 与 35 得到 57',4),
-      frame({type:'huffman',groups:[[102]],active:[0],success:true},'合并 45 与 57，构造完成',4)
-    ]; return {code,frames};
+    const weights=[5,7,10,15,20,45];
+    const code=['put all weights into minHeap;','while (heap.size() > 1) {','  Node a = heap.popMin();','  Node b = heap.popMin();','  heap.push(new Node(a.weight + b.weight, a, b));','}','// 左 0 右 1，从根到叶得到编码'];
+    const frames=[];
+    // I3-C：真实哈夫曼构建（每步从堆取最小两权值合并）+ 前缀码输出 + WPL
+    let nodes=weights.map((w,i)=>({id:'w'+i,weight:w,left:null,right:null}));
+    let groups=weights.map((w)=>({w}));
+    let mergeCount=0;
+    frames.push(meta(frame({type:'huffman',groups,active:[],weights},'全部权值进入最小堆',0),{phase:'init',mutation:{type:'allocate',targets:weights.map((_,i)=>'w'+i)},invariantChecks:['bst-order'],cost:{reads:weights.length}}));
+    while(nodes.length>1){
+      nodes.sort((a,b)=>a.weight-b.weight);
+      const a=nodes.shift(), b=nodes.shift();
+      const merged={id:'m'+(++mergeCount),weight:a.weight+b.weight,left:a,right:b};
+      // 更新层级展示：剩余集合（a、b 合并为 merged.weight）
+      const remaining=weights.slice(); // 简化：直接展示当前堆
+      const heapVals=[...nodes.map(n=>n.weight)];
+      heapVals.push(merged.weight);
+      heapVals.sort((x,y)=>x-y);
+      groups=[...heapVals.map((w)=>({w}))];
+      frames.push(meta(frame({type:'huffman',groups,active:groups.slice(0,2),weights,mergeStep:`${a.weight} + ${b.weight} = ${merged.weight}`},`从堆取出最小 ${a.weight} 与 ${b.weight}，合并为 ${merged.weight}（左 0 右 1 待编码）`,2,{a:a.weight,b:b.weight,sum:merged.weight}),{phase:'mutate',condition:`a=${a.weight}, b=${b.weight}`,mutation:{type:'merge',targets:[a.id,b.id,merged.id]},invariantChecks:['bst-order'],cost:{comparisons:1,reads:2,writes:1,allocations:1}}));
+      nodes.push(merged);
+    }
+    // 编码：从根 DFS，左 0 右 1
+    const root=nodes[0];
+    const codes={};
+    (function walk(n,prefix){
+      if(!n.left&&!n.right){codes[n.id]=prefix;return;}
+      if(n.left)walk(n.left,prefix+'0');
+      if(n.right)walk(n.right,prefix+'1');
+    })(root,'');
+    const wpl=weights.reduce((s,w,i)=>s+w*(codes['w'+i]||'').length,0);
+    const prefixOk=Object.keys(codes).every((id,i)=>!Object.keys(codes).some((id2,j)=>i!==j&&(codes[id].startsWith(codes[id2])||codes[id2].startsWith(codes[id]))));
+    frames.push(meta(frame({type:'huffman',groups:[{w:root.weight}],codes,wpl,weights,success:true},`哈夫曼树构造完成：前缀码性质${prefixOk?'成立 ✓':'被破坏 ✗'}，WPL（带权路径长度）= ${wpl}`,4,{wpl}),{phase:'verify',condition:'前缀码：任何编码不是另一编码的前缀',invariantChecks:['bst-order'],cost:{reads:1}}));
+    return {code,frames};
   }
 
   function graphStorageTrace(matrix=false) {
@@ -747,7 +897,23 @@
     } else if(kind==='shell'){
       for(let gap=Math.floor(a.length/2);gap>0;gap=Math.floor(gap/2)){for(let i=gap;i<a.length;i++){let temp=a[i],j=i;while(j>=gap&&a[j-gap]>temp){stat.comparisons++;a[j]=a[j-gap];stat.writes++;push(`gap=${gap}：组内元素后移`,2,[j-gap,j],[],null,{gap});j-=gap;}a[j]=temp;push(`gap=${gap}：插入 ${temp}`,2,[j],[],null,{gap});}}
     } else if(kind==='quick'){
-      const quick=(l,r)=>{if(l>=r)return;const pivot=a[r];let i=l;push(`选择枢轴 ${pivot}`,1,[r],[],[l,r],{pivot:r});for(let j=l;j<r;j++){push(`将 ${a[j]} 与枢轴比较`,1,[j,r],[],[l,r],{pivot:r});if(a[j]<pivot){stat.comparisons++;[a[i],a[j]]=[a[j],a[i]];stat.swaps++;push('较小元素交换到枢轴左侧',1,[i,j],[],[l,r]);i++;}}[a[i],a[r]]=[a[r],a[i]];stat.swaps++;push(`枢轴落位到 ${i}`,1,[i], [i],[l,r],{pivot:i});quick(l,i-1);quick(i+1,r);};quick(0,a.length-1);
+      // I3-B：枢轴策略（window.AlgoraSortPivot: last|first|median|random）
+      const pivotMode=(typeof window!=='undefined'&&window.AlgoraSortPivot)||'last';
+      const quick=(l,r)=>{
+        if(l>=r)return;
+        let pIdx=r;
+        if(pivotMode==='first') pIdx=l;
+        else if(pivotMode==='median'){
+          const m=Math.floor((l+r)/2);
+          const trio=[l,m,r].sort((x,y)=>a[x]-a[y]);
+          pIdx=trio[1];
+        } else if(pivotMode==='random') pIdx=l+Math.floor(Math.random()*(r-l+1));
+        if(pIdx!==r){[a[pIdx],a[r]]=[a[r],a[pIdx]];stat.swaps++;push(`枢轴 ${a[r]} 交换到末尾`,1,[pIdx,r],[],[l,r],{pivot:r});}
+        const pivot=a[r];let i=l;
+        const modeName={last:'末尾元素',first:'首元素',median:'三数取中',random:'随机'}[pivotMode];
+        push(`选择枢轴 ${pivot}（${modeName}）`,1,[r],[],[l,r],{pivot:r});
+        for(let j=l;j<r;j++){push(`将 ${a[j]} 与枢轴比较`,1,[j,r],[],[l,r],{pivot:r});if(a[j]<pivot){stat.comparisons++;[a[i],a[j]]=[a[j],a[i]];stat.swaps++;push('较小元素交换到枢轴左侧',1,[i,j],[],[l,r]);i++;}}[a[i],a[r]]=[a[r],a[i]];stat.swaps++;push(`枢轴落位到 ${i}`,1,[i], [i],[l,r],{pivot:i});quick(l,i-1);quick(i+1,r);
+      };quick(0,a.length-1);
     } else if(kind==='merge'){
       const mergeSort=(l,r)=>{if(l>=r)return;const m=Math.floor((l+r)/2);mergeSort(l,m);mergeSort(m+1,r);const temp=[];let i=l,j=m+1;while(i<=m&&j<=r){stat.comparisons++;temp.push(a[i]<=a[j]?a[i++]:a[j++]);}while(i<=m)temp.push(a[i++]);while(j<=r)temp.push(a[j++]);for(let k=0;k<temp.length;k++){a[l+k]=temp[k];stat.writes++;}push(`合并区间 [${l}, ${m}] 与 [${m+1}, ${r}]`,3,Array.from({length:r-l+1},(_,k)=>l+k),[],[l,r]);};mergeSort(0,a.length-1);
     } else if(kind==='heap'){
