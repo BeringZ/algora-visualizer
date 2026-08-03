@@ -142,7 +142,30 @@
 
   function stackTrace(raw, linked=false) {
     const values=safeNums(raw,[14,27,39]).slice(0,5);
-    const code=['void push(Stack S, int x) {','  S.data[S.top++] = x;','}','int pop(Stack S) {','  return S.data[--S.top];','}'];
+    const code=linked?[
+      'Node* push(Node* top, int x) {',
+      '  Node* s = new Node(x);',
+      '  s->next = top;      // 新结点指向原栈顶',
+      '  top = s;            // 栈顶指针上移',
+      '  return top;',
+      '}','',
+      'Node* pop(Node* top) {',
+      '  Node* s = top;      // 记录栈顶',
+      '  top = top->next;    // 栈顶指针下移',
+      '  delete s;',
+      '  return top;',
+      '}'
+    ]:['void push(Stack S, int x) {','  S.data[S.top++] = x;','}','int pop(Stack S) {','  return S.data[--S.top];','}'];
+    if(linked){
+      // 链栈：结点 + top 指针视图（文档工作流 B：不再复用数组方块视图）
+      const frames=[frame({type:'linked',values:[...values],active:[values.length-1],topIndex:values.length-1,linkedStack:true},'栈底 → 栈顶 的单向链表；top 指针指向栈顶结点',0,{top:values[values.length-1]})];
+      const pushed=[...values,88];
+      frames.push(frame({type:'linked',values:pushed,active:[pushed.length-1],inserted:[pushed.length-1],topIndex:pushed.length-1,linkedStack:true},'push(88)：创建新结点并让 top 指向它（s->next = 原top）',1,{top:88}));
+      frames.push(frame({type:'linked',values:pushed,active:[pushed.length-1],topIndex:pushed.length-1,linkedStack:true},'pop()：top 指向栈顶结点',2,{top:88}));
+      const popped=pushed.slice(0,-1);
+      frames.push(frame({type:'linked',values:popped,active:[],topIndex:popped.length-1,linkedStack:true},'88 出栈：top 下移到下一个结点',3,{top:popped.length?popped[popped.length-1]:null}));
+      return {code,frames};
+    }
     const frames=[frame({type:'stack',values,active:[values.length-1],linked},'栈顶位于最后一个元素',0,{top:values.length})];
     const pushed=[...values,88];
     frames.push(frame({type:'stack',values:pushed,active:[pushed.length-1],inserted:[pushed.length-1],linked},'执行 push(88)：元素进入栈顶',1,{top:pushed.length}));
@@ -151,16 +174,33 @@
     return {code,frames};
   }
 
-  function queueTrace(raw, circular=false, deque=false) {
+  function queueTrace(raw, circular=false, deque=false, linked=false) {
     const values=safeNums(raw,[11,23,34,48]).slice(0,6);
+    if(linked){
+      // 链队列：结点 + front/rear 指针视图（文档工作流 B）
+      const code=['Node* front, *rear;','void enqueue(int x) {','  Node* s = new Node(x);','  rear->next = s;   // 尾插：新结点接到队尾','  rear = s;         // rear 后移','}','int dequeue() {','  Node* s = front;  // 头删','  front = front->next;','  return s->value;','}'];
+      const frames=[frame({type:'linked',values:[...values],active:[0,values.length-1],frontIndex:0,rearIndex:values.length-1,linkedQueue:true},'front 指向队头结点，rear 指向队尾结点（带头结点时 front 先指向哨兵）',0,{front:values[0],rear:values[values.length-1]})];
+      const enqueued=[...values,77];
+      frames.push(frame({type:'linked',values:enqueued,active:[enqueued.length-1],inserted:[enqueued.length-1],frontIndex:0,rearIndex:enqueued.length-1,linkedQueue:true},'enqueue(77)：新结点接到队尾，rear 后移',1,{rear:77}));
+      frames.push(frame({type:'linked',values:enqueued,active:[0],frontIndex:0,rearIndex:enqueued.length-1,linkedQueue:true},`读取队头元素 ${enqueued[0]}`,2,{front:enqueued[0]}));
+      const after=enqueued.slice(1);
+      frames.push(frame({type:'linked',values:after,active:[],frontIndex:0,rearIndex:after.length-1,linkedQueue:true},'dequeue()：front 前移到下一个结点',3,{front:after[0]||null}));
+      return {code,frames};
+    }
     const code = deque ? [
       'deque.addLast(77);','deque.addFirst(6);','int x = deque.removeLast();','int y = deque.removeFirst();'
+    ] : (circular ? [
+      'rear = (rear + 1) % capacity;',      // 入队：rear 前移（模运算复用空间）
+      'queue[rear] = value;',
+      'value = queue[front];',
+      'front = (front + 1) % capacity;',    // 出队：front 前移
+      '// 空：front == rear；满：(rear+1)%cap == front（牺牲一个单元）'
     ] : [
       'queue[rear] = value;','rear = (rear + 1) % capacity;','value = queue[front];','front = (front + 1) % capacity;'
-    ];
-    const frames=[frame({type:'queue',values,active:[0,values.length-1],circular,deque},'front 指向队头，rear 指向队尾之后',0,{front:0,rear:values.length})];
+    ]);
+    const frames=[frame({type:'queue',values,active:[0,values.length-1],circular,deque},circular?'循环队列：front 指向队头，rear 指向下一个可写位置':'front 指向队头，rear 指向队尾之后',0,{front:0,rear:values.length})];
     const enqueued=[...values,77];
-    frames.push(frame({type:'queue',values:enqueued,active:[enqueued.length-1],inserted:[enqueued.length-1],circular,deque},deque?'从队尾加入 77':'77 从队尾入队',0,{front:0,rear:enqueued.length}));
+    frames.push(frame({type:'queue',values:enqueued,active:[enqueued.length-1],inserted:[enqueued.length-1],circular,deque},deque?'从队尾加入 77':(circular?'77 从队尾入队（rear 模运算前移）':'77 从队尾入队'),0,{front:0,rear:enqueued.length}));
     if(deque){
       const both=[6,...enqueued];
       frames.push(frame({type:'queue',values:both,active:[0],inserted:[0],circular,deque},'双端队列允许从队头加入 6',1));
@@ -169,7 +209,15 @@
     } else {
       frames.push(frame({type:'queue',values:enqueued,active:[0],circular,deque},`读取队头元素 ${enqueued[0]}`,2,{front:0}));
       const after=enqueued.slice(1);
-      frames.push(frame({type:'queue',values:after,active:[0],circular,deque},'队头元素出队，front 前移',3,{front:1,rear:enqueued.length}));
+      frames.push(frame({type:'queue',values:after,active:[0],circular,deque},circular?'队头元素出队，front 模运算前移':'队头元素出队，front 前移',3,{front:1,rear:enqueued.length}));
+      if(circular){
+        // 假溢出对比演示（工作流 B）：普通顺序队列 front 前移后数组头部成空洞
+        frames.push(meta(frame({type:'queue',values:after,active:[],circular,deque,falseOverflow:true},
+          '⚠️ 对比：若这是普通顺序队列，front 前移后头部空位无法复用（rear 已到末尾）→ 假溢出',3),{
+          phase:'verify', condition:'普通队列：rear 到末尾后 front 前的空位浪费',
+          invariantChecks:['queue-empty-full'], cost:{reads:1}
+        }));
+      }
     }
     return {code,frames};
   }
@@ -641,7 +689,8 @@
     if(id==='static-list') return staticListTrace(rawInput);
     if(id==='stack') return stackTrace(rawInput,false);
     if(id==='linked-stack') return stackTrace(rawInput,true);
-    if(id==='queue'||id==='linked-queue') return queueTrace(rawInput,false,false);
+    if(id==='queue') return queueTrace(rawInput,false,false);
+    if(id==='linked-queue') return queueTrace(rawInput,false,false,true);
     if(id==='circular-queue') return queueTrace(rawInput,true,false);
     if(id==='deque') return queueTrace(rawInput,false,true);
     if(id==='bracket') return bracketTrace();
