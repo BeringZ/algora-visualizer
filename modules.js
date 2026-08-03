@@ -94,11 +94,10 @@ window.ALGORA_MODULES = [
     'singly-list-no-head', 'singly-list-head',
     'doubly-list-no-head', 'doubly-list-head',
     'circular-singly-list', 'circular-doubly-list',
-    // 链栈：共享 stackTrace 数组视图（文档 B：需结点与指针视图）
-    'linked-stack-head', 'linked-stack-no-head',
-    // 队列：共享 queueTrace（文档 B：假溢出/两种空满方案/双端）
-    'array-queue', 'linked-queue-head', 'linked-queue-no-head',
-    'circular-queue', 'deque',
+    // 链栈：I2-A 已升级为结点+top 指针视图（L2）
+    // 队列：I2-B 已升级（array-queue 假溢出演示 / circular-queue 两种空满方案 / 链队列 front·rear 指针视图）
+    //   deque 仍需受限输入/输出变体（保持 L1）
+    'deque',
     // 树：共享 treeTrace（文档 D：专属操作与不变量）
     'binary-tree', 'level-order', 'threaded-tree',
     // 树：共享 bstTrace（文档 D P0：红黑修复 / B 树借位合并；avl 已于 I1-A 升级为专属 L3）
