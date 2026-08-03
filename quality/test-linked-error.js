@@ -24,6 +24,12 @@ vm.createContext(sandbox);
   'quality/validators/validateCircularQueue.js', 'quality/validators/validateLinkedList.js'].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), sandbox, { filename: f });
 });
+sandbox.window.AlgoraValidators = {
+  validateBST: require('./validators/validateBST.js').validateBST,
+  validateAVL: require('./validators/validateAVL.js').validateAVL,
+  validateCircularQueue: require('./validators/validateCircularQueue.js').validateCircularQueue,
+  validateLinkedList: require('./validators/validateLinkedList.js').validateLinkedList,
+};
 const W = sandbox.window;
 
 let pass = 0, fail = 0;
