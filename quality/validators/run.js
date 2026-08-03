@@ -12,6 +12,8 @@ const { validateBST } = require('./validateBST.js');
 const { validateAVL } = require('./validateAVL.js');
 const { validateCircularQueue } = require('./validateCircularQueue.js');
 const { validateLinkedList } = require('./validateLinkedList.js');
+const { validateRedBlack } = require('./validateRedBlack.js');
+const { validateBTree } = require('./validateBTree.js');
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -150,6 +152,97 @@ console.log('—— validateLinkedList ——');
 
   const badRef = { head: 'n1', nodes: mk([['n1', 18, 'ghost']]) };
   expect('next 引用悬空被捕获', validateLinkedList(badRef), false, ['next-ref']);
+}
+
+console.log('—— validateRedBlack ——');
+{
+  const ok = {
+    root: 'n2',
+    nodes: {
+      n2: { id: 'n2', key: 20, color: 'black', left: 'n1', right: 'n3' },
+      n1: { id: 'n1', key: 10, color: 'red', left: null, right: null },
+      n3: { id: 'n3', key: 30, color: 'red', left: null, right: null }
+    }
+  };
+  expect('合法红黑树通过', validateRedBlack(ok), true);
+
+  const rootRed = { ...ok, nodes: { ...ok.nodes, n2: { ...ok.nodes.n2, color: 'red' } } };
+  expect('根结点为红色被捕获', validateRedBlack(rootRed), false, ['root-red']);
+
+  const doubleRed = {
+    root: 'n3',
+    nodes: {
+      n3: { id: 'n3', key: 30, color: 'black', left: 'n2', right: null },
+      n2: { id: 'n2', key: 20, color: 'red', left: 'n1', right: null },
+      n1: { id: 'n1', key: 10, color: 'red', left: null, right: null }
+    }
+  };
+  expect('连续红结点被捕获', validateRedBlack(doubleRed), false, ['red-child']);
+
+  const bhMismatch = {
+    root: 'n2',
+    nodes: {
+      n2: { id: 'n2', key: 20, color: 'black', left: 'n1', right: 'n3' },
+      n1: { id: 'n1', key: 10, color: 'red', left: 'n0', right: null },
+      n0: { id: 'n0', key: 5, color: 'black', left: null, right: null },
+      n3: { id: 'n3', key: 30, color: 'black', left: null, right: null }
+    }
+  };
+  expect('左右黑高不一致被捕获', validateRedBlack(bhMismatch), false, ['black-height']);
+
+  const bstBad = {
+    root: 'n2',
+    nodes: {
+      n2: { id: 'n2', key: 20, color: 'black', left: 'n1', right: null },
+      n1: { id: 'n1', key: 25, color: 'red', left: null, right: null }
+    }
+  };
+  expect('BST 有序性破坏被捕获', validateRedBlack(bstBad), false, ['bst-order']);
+}
+
+console.log('—— validateBTree ——');
+{
+  // 2-3 树（m=3）：根 [20]，两个孩子 [10] [30,40]
+  const ok = {
+    m: 3,
+    root: 'r',
+    nodes: {
+      r: { id: 'r', keys: [20], children: ['l', 'rl'] },
+      l: { id: 'l', keys: [10], children: [] },
+      rl: { id: 'rl', keys: [30, 40], children: [] }
+    }
+  };
+  expect('合法 2-3 树通过', validateBTree(ok), true);
+
+  const under = {
+    m: 3, root: 'r',
+    nodes: { r: { id: 'r', keys: [20], children: ['l', 'rl'] }, l: { id: 'l', keys: [], children: [] }, rl: { id: 'rl', keys: [30, 40], children: [] } }
+  };
+  expect('下溢结点被捕获', validateBTree(under), false, ['empty-node']);
+
+  const overflow = {
+    m: 3, root: 'r',
+    nodes: { r: { id: 'r', keys: [20, 30, 40], children: [] } }
+  };
+  expect('上溢结点被捕获（3 个关键字 > 2）', validateBTree(overflow), false, ['overflow']);
+
+  const order = {
+    m: 3, root: 'r',
+    nodes: { r: { id: 'r', keys: [30, 20], children: [] } }
+  };
+  expect('关键字无序被捕获', validateBTree(order), false, ['key-order']);
+
+  const range = {
+    m: 3, root: 'r',
+    nodes: { r: { id: 'r', keys: [20], children: ['l', 'rl'] }, l: { id: 'l', keys: [25], children: [] }, rl: { id: 'rl', keys: [30], children: [] } }
+  };
+  expect('子树关键字越界被捕获（25 > 20）', validateBTree(range), false, ['range']);
+
+  const childCount = {
+    m: 3, root: 'r',
+    nodes: { r: { id: 'r', keys: [20], children: ['l'] }, l: { id: 'l', keys: [10], children: [] } }
+  };
+  expect('子树数 ≠ 关键字数+1 被捕获', validateBTree(childCount), false, ['child-count']);
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);
