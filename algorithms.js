@@ -247,7 +247,80 @@
     ]; return {code,frames};
   }
 
+  /* ============================================================
+     矩阵压缩坐标映射公式库（I2-C · 计划书工作流 C）
+     kind: 'symmetric-lower' | 'symmetric-upper' | 'triangular' | 'tridiagonal'
+     返回 { k, valid, formula }：一维下标、是否落在存储区、映射公式文本
+     ============================================================ */
+  const MATRIX_MAP = {
+    'symmetric-lower': (i, j, n) => {
+      const valid = i >= j;
+      return { k: valid ? i * (i + 1) / 2 + j : j * (j + 1) / 2 + i, valid: true, formula: 'k = i(i+1)/2 + j（下三角，i ≥ j）' };
+    },
+    'symmetric-upper': (i, j, n) => {
+      const valid = i <= j;
+      return { k: valid ? j * (j + 1) / 2 + i : i * (i + 1) / 2 + j, valid: true, formula: 'k = j(j+1)/2 + i（上三角，i ≤ j）' };
+    },
+    triangular: (i, j, n) => {
+      const valid = i >= j;
+      return { k: valid ? i * (i + 1) / 2 + j : -1, valid, formula: 'k = i(i+1)/2 + j（下三角；上三角区域保存常量）' };
+    },
+    tridiagonal: (i, j, n) => {
+      const valid = Math.abs(i - j) <= 1;
+      return { k: valid ? 2 * i + j : -1, valid, formula: 'k = 2i + j（|i − j| ≤ 1；仅存 3n − 2 个）' };
+    }
+  };
+  window.AlgoraMatrixMap = MATRIX_MAP;
+  function matrixMapView(kind, n) {
+    // 构造该存储方式下的示例矩阵与压缩存储（对称/三角：下三角区域非零；三对角：带宽 1）
+    const m = Array.from({ length: n }, () => Array(n).fill(0));
+    let val = 1;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const keep = kind.startsWith('symmetric') ? true : (kind === 'triangular' ? i >= j : Math.abs(i - j) <= 1);
+      if (keep) m[i][j] = val++;
+    }
+    if (kind.startsWith('symmetric')) {
+      // 对称：镜像填充
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) m[i][j] = m[j][i];
+    }
+    const storage = Array.from({ length: kind === 'tridiagonal' ? 3 * n - 2 : n * (n + 1) / 2 }, () => null);
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const r = MATRIX_MAP[kind](i, j, n);
+      if (r.valid) storage[r.k] = m[i][j];
+    }
+    const spaceBefore = n * n, spaceAfter = storage.length;
+    return { kind, n, matrix: m, storage, formula: MATRIX_MAP[kind](0, 0, n).formula, spaceBefore, spaceAfter };
+  }
+
   function matrixTrace(kind) {
+    // I2-C：对称/三角/三对角走交互式映射视图（原矩阵 ↔ 公式 ↔ 压缩存储 三联动）
+    if (kind === 'symmetric' || kind === 'triangular' || kind === 'tridiagonal') {
+      const mapKind = kind === 'symmetric' ? 'symmetric-lower' : kind;
+      const n = 4;
+      const view = matrixMapView(mapKind, n);
+      const code = [
+        `// ${view.formula}`,
+        'int k = map(i, j, n);',
+        'return storage[k];'
+      ];
+      const labels = {
+        'symmetric-lower': '对称矩阵 · 下三角压缩',
+        'symmetric-upper': '对称矩阵 · 上三角压缩',
+        triangular: '三角矩阵 · 下三角压缩（上三角存常量）',
+        tridiagonal: '三对角矩阵 · 仅存 3n−2 个元素'
+      };
+      const frames = [
+        meta(frame({ type: 'matrix-map', ...view, activeCell: null, activeSlot: null }, `${labels[mapKind]}：原矩阵 ${view.spaceBefore} 元素 → 压缩 ${view.spaceAfter} 元素（${(100 * view.spaceAfter / view.spaceBefore).toFixed(0)}%）`, 0), {
+          phase: 'init', condition: view.formula,
+          invariantChecks: ['graph-consistency'], cost: { reads: 1 }
+        }),
+        meta(frame({ type: 'matrix-map', ...view, activeCell: [1, 0], activeSlot: MATRIX_MAP[mapKind](1, 0, n).k, formulaText: MATRIX_MAP[mapKind](1, 0, n).formula + ` → a[1][0] 存于 storage[${MATRIX_MAP[mapKind](1, 0, n).k}]` }, `点击矩阵元素 a[1][0]，映射公式 ${MATRIX_MAP[mapKind](1, 0, n).formula}`, 1, { i: 1, j: 0, k: MATRIX_MAP[mapKind](1, 0, n).k }), {
+          phase: 'locate', condition: MATRIX_MAP[mapKind](1, 0, n).formula,
+          cost: { comparisons: 1, reads: 1 }
+        })
+      ];
+      return { code, frames, interactive: true };
+    }
     const base=[
       [1,2,3,4],[2,5,6,7],[3,6,8,9],[4,7,9,10]
     ];
@@ -631,8 +704,22 @@
     return {code,frames};
   }
 
+  // I2-D：排序实验输入集（工作流 F：已排序/逆序/几乎有序/重复/全相等/随机）
+  window.SORT_INPUTS = {
+    sorted: () => [5, 12, 18, 27, 33, 42, 56, 71],
+    reversed: () => [71, 56, 42, 33, 27, 18, 12, 5],
+    nearly: () => [5, 12, 27, 18, 33, 42, 56, 71],
+    duplicates: () => [18, 5, 18, 27, 5, 42, 18, 5],
+    equal: () => [7, 7, 7, 7, 7, 7, 7, 7],
+    random: () => Array.from({ length: 8 }, () => 5 + Math.floor(Math.random() * 66))
+  };
+  window.SORT_INPUT_LABELS = { sorted: '已排序', reversed: '逆序', nearly: '几乎有序', duplicates: '重复值', equal: '全相等', random: '随机' };
+
   function sortTrace(raw, kind='bubble') {
     const a=safeNums(raw,[42,17,8,33,21,5,29]).slice(0,10); const frames=[];
+    // I2-D：操作成本统计（比较/交换/写入），每帧附累计值供实验面板展示
+    const stat={comparisons:0,swaps:0,writes:0};
+    const ids=a.map((x,idx)=>a.slice(0,idx).filter(v=>v===x).length); // 重复值身份编号（稳定性）
     const codeMap={
       insertion:['for (i = 1; i < n; i++) {','  key = a[i]; j = i - 1;','  while (j >= 0 && a[j] > key) a[j+1] = a[j--];','  a[j+1] = key;','}'],
       binaryInsertion:['for (i = 1; i < n; i++) {','  pos = binarySearch(a, 0, i-1, a[i]);','  shiftRight(pos, i-1);','  a[pos] = key;','}'],
@@ -644,25 +731,29 @@
       merge:['mergeSort(left, right) {','  mid = (left + right) / 2;','  mergeSort(left, mid); mergeSort(mid+1, right);','  merge(left, mid, right);','}'],
       radix:['for (exp = 1; max/exp > 0; exp *= 10)','  stableCountingSortByDigit(a, exp);']
     };
-    const push=(msg,line,active=[],sorted=[],range=null,extra={})=>frames.push(frame({type:'bars',values:a,active,sorted,range,...extra},msg,line));
+    const push=(msg,line,active=[],sorted=[],range=null,extra={})=>{
+      const f=frame({type:'bars',values:a,active,sorted,range,stability:ids, ...extra},msg,line);
+      f._meta={cost:{...stat}, kind};
+      frames.push(f);
+    };
     push('初始序列',0);
     if(kind==='bubble'){
-      for(let end=a.length-1;end>0;end--){for(let i=0;i<end;i++){push(`比较 ${a[i]} 与 ${a[i+1]}`,1,[i,i+1],Array.from({length:a.length-end-1},(_,k)=>a.length-1-k));if(a[i]>a[i+1]){[a[i],a[i+1]]=[a[i+1],a[i]];push('逆序，交换相邻元素',2,[i,i+1],[]);}}push(`位置 ${end} 已确定`,0,[end],Array.from({length:a.length-end},(_,k)=>a.length-1-k));}
+      for(let end=a.length-1;end>0;end--){for(let i=0;i<end;i++){stat.comparisons++;push(`比较 ${a[i]} 与 ${a[i+1]}`,1,[i,i+1],Array.from({length:a.length-end-1},(_,k)=>a.length-1-k));if(a[i]>a[i+1]){[a[i],a[i+1]]=[a[i+1],a[i]];stat.swaps++;push('逆序，交换相邻元素',2,[i,i+1],[]);}}push(`位置 ${end} 已确定`,0,[end],Array.from({length:a.length-end},(_,k)=>a.length-1-k));}
     } else if(kind==='insertion'||kind==='binaryInsertion'){
-      for(let i=1;i<a.length;i++){const key=a[i];let pos=i;if(kind==='binaryInsertion'){let l=0,r=i-1;while(l<=r){const m=Math.floor((l+r)/2);push(`折半比较 key=${key} 与 a[${m}]=${a[m]}`,1,[m,i],Array.from({length:i},(_,k)=>k),[l,r]);if(a[m]<=key)l=m+1;else r=m-1;}pos=l;}else{while(pos>0&&a[pos-1]>key)pos--;}
-        for(let j=i;j>pos;j--){a[j]=a[j-1];push(`元素右移，为 ${key} 腾出位置`,2,[j-1,j],Array.from({length:i},(_,k)=>k));}a[pos]=key;push(`将 ${key} 插入位置 ${pos}`,3,[pos],Array.from({length:i+1},(_,k)=>k));}
+      for(let i=1;i<a.length;i++){const key=a[i];let pos=i;if(kind==='binaryInsertion'){let l=0,r=i-1;while(l<=r){const m=Math.floor((l+r)/2);stat.comparisons++;push(`折半比较 key=${key} 与 a[${m}]=${a[m]}`,1,[m,i],Array.from({length:i},(_,k)=>k),[l,r]);if(a[m]<=key)l=m+1;else r=m-1;}pos=l;}else{while(pos>0&&a[pos-1]>key){stat.comparisons++;pos--;}}
+        for(let j=i;j>pos;j--){a[j]=a[j-1];stat.writes++;push(`元素右移，为 ${key} 腾出位置`,2,[j-1,j],Array.from({length:i},(_,k)=>k));}a[pos]=key;push(`将 ${key} 插入位置 ${pos}`,3,[pos],Array.from({length:i+1},(_,k)=>k));}
     } else if(kind==='selection'){
-      for(let i=0;i<a.length-1;i++){let min=i;for(let j=i+1;j<a.length;j++){push(`在未排序区间寻找最小值`,2,[min,j],Array.from({length:i},(_,k)=>k));if(a[j]<a[min])min=j;}[a[i],a[min]]=[a[min],a[i]];push(`最小值交换到位置 ${i}`,3,[i,min],Array.from({length:i+1},(_,k)=>k));}
+      for(let i=0;i<a.length-1;i++){let min=i;for(let j=i+1;j<a.length;j++){push(`在未排序区间寻找最小值`,2,[min,j],Array.from({length:i},(_,k)=>k));stat.comparisons++;if(a[j]<a[min])min=j;}[a[i],a[min]]=[a[min],a[i]];push(`最小值交换到位置 ${i}`,3,[i,min],Array.from({length:i+1},(_,k)=>k));}
     } else if(kind==='shell'){
-      for(let gap=Math.floor(a.length/2);gap>0;gap=Math.floor(gap/2)){for(let i=gap;i<a.length;i++){let temp=a[i],j=i;while(j>=gap&&a[j-gap]>temp){a[j]=a[j-gap];push(`gap=${gap}：组内元素后移`,2,[j-gap,j],[],null,{gap});j-=gap;}a[j]=temp;push(`gap=${gap}：插入 ${temp}`,2,[j],[],null,{gap});}}
+      for(let gap=Math.floor(a.length/2);gap>0;gap=Math.floor(gap/2)){for(let i=gap;i<a.length;i++){let temp=a[i],j=i;while(j>=gap&&a[j-gap]>temp){stat.comparisons++;a[j]=a[j-gap];stat.writes++;push(`gap=${gap}：组内元素后移`,2,[j-gap,j],[],null,{gap});j-=gap;}a[j]=temp;push(`gap=${gap}：插入 ${temp}`,2,[j],[],null,{gap});}}
     } else if(kind==='quick'){
-      const quick=(l,r)=>{if(l>=r)return;const pivot=a[r];let i=l;push(`选择枢轴 ${pivot}`,1,[r],[],[l,r],{pivot:r});for(let j=l;j<r;j++){push(`将 ${a[j]} 与枢轴比较`,1,[j,r],[],[l,r],{pivot:r});if(a[j]<pivot){[a[i],a[j]]=[a[j],a[i]];push('较小元素交换到枢轴左侧',1,[i,j],[],[l,r]);i++;}}[a[i],a[r]]=[a[r],a[i]];push(`枢轴落位到 ${i}`,1,[i], [i],[l,r],{pivot:i});quick(l,i-1);quick(i+1,r);};quick(0,a.length-1);
+      const quick=(l,r)=>{if(l>=r)return;const pivot=a[r];let i=l;push(`选择枢轴 ${pivot}`,1,[r],[],[l,r],{pivot:r});for(let j=l;j<r;j++){push(`将 ${a[j]} 与枢轴比较`,1,[j,r],[],[l,r],{pivot:r});if(a[j]<pivot){stat.comparisons++;[a[i],a[j]]=[a[j],a[i]];stat.swaps++;push('较小元素交换到枢轴左侧',1,[i,j],[],[l,r]);i++;}}[a[i],a[r]]=[a[r],a[i]];stat.swaps++;push(`枢轴落位到 ${i}`,1,[i], [i],[l,r],{pivot:i});quick(l,i-1);quick(i+1,r);};quick(0,a.length-1);
     } else if(kind==='merge'){
-      const mergeSort=(l,r)=>{if(l>=r)return;const m=Math.floor((l+r)/2);mergeSort(l,m);mergeSort(m+1,r);const temp=[];let i=l,j=m+1;while(i<=m&&j<=r)temp.push(a[i]<=a[j]?a[i++]:a[j++]);while(i<=m)temp.push(a[i++]);while(j<=r)temp.push(a[j++]);for(let k=0;k<temp.length;k++)a[l+k]=temp[k];push(`合并区间 [${l}, ${m}] 与 [${m+1}, ${r}]`,3,Array.from({length:r-l+1},(_,k)=>l+k),[],[l,r]);};mergeSort(0,a.length-1);
+      const mergeSort=(l,r)=>{if(l>=r)return;const m=Math.floor((l+r)/2);mergeSort(l,m);mergeSort(m+1,r);const temp=[];let i=l,j=m+1;while(i<=m&&j<=r){stat.comparisons++;temp.push(a[i]<=a[j]?a[i++]:a[j++]);}while(i<=m)temp.push(a[i++]);while(j<=r)temp.push(a[j++]);for(let k=0;k<temp.length;k++){a[l+k]=temp[k];stat.writes++;}push(`合并区间 [${l}, ${m}] 与 [${m+1}, ${r}]`,3,Array.from({length:r-l+1},(_,k)=>l+k),[],[l,r]);};mergeSort(0,a.length-1);
     } else if(kind==='heap'){
-      const sift=(n,i)=>{while(true){let largest=i,l=2*i+1,r=2*i+2;if(l<n&&a[l]>a[largest])largest=l;if(r<n&&a[r]>a[largest])largest=r;if(largest===i)break;[a[i],a[largest]]=[a[largest],a[i]];push('下沉调整大根堆',3,[i,largest],[]);i=largest;}};for(let i=Math.floor(a.length/2)-1;i>=0;i--)sift(a.length,i);push('大根堆建立完成',0,[0],[]);for(let end=a.length-1;end>0;end--){[a[0],a[end]]=[a[end],a[0]];push('堆顶最大值交换到末尾',2,[0,end],Array.from({length:a.length-end},(_,k)=>a.length-1-k));sift(end,0);}
+      const sift=(n,i)=>{while(true){let largest=i,l=2*i+1,r=2*i+2;stat.comparisons++;if(l<n&&a[l]>a[largest])largest=l;stat.comparisons++;if(r<n&&a[r]>a[largest])largest=r;if(largest===i)break;[a[i],a[largest]]=[a[largest],a[i]];stat.swaps++;push('下沉调整大根堆',3,[i,largest],[]);i=largest;}};for(let i=Math.floor(a.length/2)-1;i>=0;i--)sift(a.length,i);push('大根堆建立完成',0,[0],[]);for(let end=a.length-1;end>0;end--){[a[0],a[end]]=[a[end],a[0]];stat.swaps++;push('堆顶最大值交换到末尾',2,[0,end],Array.from({length:a.length-end},(_,k)=>a.length-1-k));sift(end,0);}
     } else if(kind==='radix'){
-      const max=Math.max(...a);for(let exp=1;Math.floor(max/exp)>0;exp*=10){const buckets=Array.from({length:10},()=>[]);a.forEach(v=>buckets[Math.floor(v/exp)%10].push(v));let k=0;buckets.forEach(bucket=>bucket.forEach(v=>a[k++]=v));push(`按 ${exp===1?'个位':exp===10?'十位':'更高位'} 分配并收集`,1,[],[],null,{buckets,exp});}
+      const max=Math.max(...a);for(let exp=1;Math.floor(max/exp)>0;exp*=10){const buckets=Array.from({length:10},()=>[]);a.forEach(v=>{buckets[Math.floor(v/exp)%10].push(v);stat.writes++;});let k=0;buckets.forEach(bucket=>bucket.forEach(v=>a[k++]=v));push(`按 ${exp===1?'个位':exp===10?'十位':'更高位'} 分配并收集`,1,[],[],null,{buckets,exp});}
     }
     push('排序完成',0,[],Array.from({length:a.length},(_,k)=>k));
     return {code:codeMap[kind],frames};
