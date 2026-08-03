@@ -43,7 +43,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["insert", "delete", "swap", "rotateRight", "rotateLeft", "recolor", "split", "merge", "write", "read", "compare", "allocate", "deallocate", "other"]
+          "enum": ["insert", "delete", "swap", "rotateRight", "rotateLeft", "rotate", "recolor", "split", "merge", "write", "read", "compare", "allocate", "deallocate", "other"]
         },
         "targets": {
           "type": "array",
