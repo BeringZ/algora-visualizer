@@ -103,9 +103,11 @@ window.ALGORA_MODULES = [
     'red-black-tree', 'b-tree'
   ]);
   // I2-D：排序 9 模块已具备实验输入集 + 成本统计 + 稳定性轨迹 → L3 精讲
+  // I3-A/C：BST 三类删除+验证器、哈夫曼真实构建+编码表 → L3 精讲
   const L3 = new Set([
     'insertion-sort', 'binary-insertion-sort', 'shell-sort', 'bubble-sort',
-    'quick-sort', 'selection-sort', 'heap-sort', 'merge-sort', 'radix-sort'
+    'quick-sort', 'selection-sort', 'heap-sort', 'merge-sort', 'radix-sort',
+    'bst', 'huffman'
   ]);
   window.ALGORA_MODULES.forEach((m) => {
     if (m.level === undefined) m.level = L3.has(m.id) ? 'L3' : (L1.has(m.id) ? 'L1' : 'L2');
