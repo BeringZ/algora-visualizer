@@ -76,3 +76,35 @@ window.ALGORA_MODULES = [
   { id:'merge-sort', category:'sort', title:'归并排序', type:'bars', demo:'merge-sort', time:'O(n log n)', space:'O(n)', tags:['排序','稳定'], summary:'递归分解序列，再合并两个有序子序列。' },
   { id:'radix-sort', category:'sort', title:'基数排序', type:'bars', demo:'radix-sort', time:'O(d(n+r))', space:'O(n+r)', tags:['排序','稳定'], summary:'按个位、十位等关键字依次进行稳定分配与收集。' },
 ];
+
+/* ============================================================
+   内容成熟度基线标记（v0.1 · 2026-08-03）
+   依据《Algora 与 Code Atlas 内容质量升级落地计划书》四级成熟度：
+     L1 概览 = 有定义/用途/基础示例，但共享通用模板、无专属操作语义
+     L2 标准 = 有专属 trace 实现，可完成基础学习
+     L3 精讲 = 有反例/错误案例/状态解释/复杂度差异（I1 起逐模块校准）
+     L4 实验 = 可运行代码/测试/开放任务（I1 起逐模块校准）
+   说明：以下集合为「共享模板、需专项改造」的模块（文档 P0 点名项
+   也在其中，如 avl/red-black-tree/b-tree）。新增模块请直接在定义中
+   书写 level 字段，此段仅作基线归一化，后续可由质检报告驱动改写。
+   ============================================================ */
+(function markLevels() {
+  const L1 = new Set([
+    // 链表：6 个共享 linkedTrace（文档 B：需错误顺序演示）
+    'singly-list-no-head', 'singly-list-head',
+    'doubly-list-no-head', 'doubly-list-head',
+    'circular-singly-list', 'circular-doubly-list',
+    // 链栈：共享 stackTrace 数组视图（文档 B：需结点与指针视图）
+    'linked-stack-head', 'linked-stack-no-head',
+    // 队列：共享 queueTrace（文档 B：假溢出/两种空满方案/双端）
+    'array-queue', 'linked-queue-head', 'linked-queue-no-head',
+    'circular-queue', 'deque',
+    // 树：共享 treeTrace（文档 D：专属操作与不变量）
+    'binary-tree', 'level-order', 'threaded-tree',
+    // 树：共享 bstTrace（文档 D P0：AVL 四旋转 / 红黑修复 / B 树借位合并）
+    'avl', 'red-black-tree', 'b-tree'
+  ]);
+  window.ALGORA_MODULES.forEach((m) => {
+    if (m.level === undefined) m.level = L1.has(m.id) ? 'L1' : 'L2';
+  });
+})();

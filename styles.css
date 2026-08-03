@@ -295,3 +295,28 @@ a { color: inherit; text-decoration: none; }
 
 .operation-tabs{display:flex;gap:8px;overflow-x:auto;padding:10px 14px 4px;border-bottom:1px solid var(--border);scrollbar-width:thin}.operation-tab{flex:0 0 auto;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:9px;padding:8px 13px;font-weight:700;cursor:pointer;transition:.18s}.operation-tab:hover{border-color:var(--primary);color:var(--text)}.operation-tab.active{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 4px 12px rgba(53,99,233,.24)}
 @media(max-width:700px){.operation-tabs{padding-left:10px}.operation-tab{padding:7px 10px;font-size:12px}}
+
+/* ===== 内容成熟度统计条（计划书 · 真实成熟度展示） ===== */
+.maturity-bar {
+  margin-bottom: 16px; padding: 12px 13px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface-2);
+}
+.maturity-head {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 9px;
+}
+.maturity-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.maturity-row:last-child { margin-bottom: 0; }
+.m-level {
+  flex: 0 0 30px; font-size: 10.5px; font-weight: 800; text-align: center;
+  padding: 2px 0; border-radius: 6px; color: #fff;
+}
+.m-L1 { background: #8b95a8; }
+.m-L2 { background: #3b82f6; }
+.m-L3 { background: #d78822; }
+.m-L4 { background: #178869; }
+.m-name { flex: 0 0 30px; font-size: 11px; color: var(--muted); }
+.m-track { flex: 1; height: 6px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.m-track i { display: block; height: 100%; border-radius: 4px; background: var(--accent); transition: width .5s cubic-bezier(.22,.9,.32,1); }
+.m-num { flex: 0 0 20px; font-size: 11px; font-weight: 700; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }

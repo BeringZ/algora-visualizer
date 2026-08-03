@@ -185,8 +185,31 @@
     }).join('');
     return `<aside class="sidebar ${state.sidebarOpen?'open':''}" id="sidebar">
       <div class="search-wrap"><span class="search-icon">⌕</span><input id="nav-search" value="${escapeHtml(state.search)}" placeholder="搜索算法或数据结构" /></div>
+      ${renderMaturityBar()}
       <nav id="nav-groups">${hasAny?groups:'<div class="empty-search">未找到匹配模块</div>'}</nav>
     </aside>`;
+  }
+
+  // 内容成熟度统计条（计划书第 8 项：展示真实成熟度而非只显示总数）
+  function renderMaturityBar() {
+    const count = { L1: 0, L2: 0, L3: 0, L4: 0 };
+    modules.forEach((m) => { count[m.level || 'L1']++; });
+    const total = modules.length || 1;
+    const names = { L1: '概览', L2: '标准', L3: '精讲', L4: '实验' };
+    const rows = ['L1', 'L2', 'L3', 'L4'].map((lv) => {
+      const n = count[lv];
+      const pct = Math.round((n / total) * 100);
+      return `<div class="maturity-row" title="${names[lv]}：${n} 个模块">
+        <span class="m-level m-${lv}">${lv}</span>
+        <span class="m-name">${names[lv]}</span>
+        <div class="m-track"><i style="width:${pct}%"></i></div>
+        <span class="m-num">${n}</span>
+      </div>`;
+    }).join('');
+    return `<div class="maturity-bar" id="maturityBar">
+      <div class="maturity-head">内容成熟度 · 共 ${modules.length} 模块</div>
+      ${rows}
+    </div>`;
   }
 
   function renderLearningCards() {

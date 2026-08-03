@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://beringz.github.io/algora-visualizer/schema/step.schema.json",
+  "title": "Algora Step Frame 数据合同 v1",
+  "description": "算法动画单步帧（trace frame）的数据合同。兼容现有 v0 基础帧（visual/message/line/vars），升级帧可携带 phase/condition/mutation/invariantChecks/cost/codeMap 语义字段。目标：动画从『预设帧 + 行号高亮』升级为『可解释的状态迁移记录』。",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "语义步骤 ID，如 avl-insert-rotate-01。同一模块内必须唯一。"
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["locate", "mutate", "repair", "verify", "init", "cleanup", "search"],
+      "description": "当前阶段：定位 / 修改 / 修复 / 验证 / 初始化 / 收尾 / 查找。"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "description": "面向学习者的自然语言解释。"
+    },
+    "condition": {
+      "type": "string",
+      "description": "本步执行的判断条件（自然语言或伪代码），如 abs(balanceFactor(node)) > 1。"
+    },
+    "visual": {
+      "type": "object",
+      "description": "可视化状态，与渲染层约定（type/values/active/pointers/inserted/moved/found…）。兼容字段。"
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "兼容字段：主代码行号（v0 单行高亮）。新内容应优先使用 codeMap 做语义步骤映射。"
+    },
+    "vars": {
+      "type": "object",
+      "description": "兼容字段：关键变量快照，如 { length, i, value, pos }。"
+    },
+    "mutation": {
+      "type": "object",
+      "description": "本步对结构的状态修改（可选）。",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["insert", "delete", "swap", "rotateRight", "rotateLeft", "recolor", "split", "merge", "write", "read", "compare", "allocate", "deallocate", "other"]
+        },
+        "targets": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "被修改的结点 ID / 索引 / 变量名列表。"
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": true
+    },
+    "invariantChecks": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["bst-order", "avl-balance", "height-consistency", "red-black-roots", "red-black-red-children", "red-black-black-height", "heap-order", "complete-tree", "linked-next", "linked-prev", "circular-termination", "queue-empty-full", "deque-consistency", "b-tree-order", "graph-consistency"] },
+      "description": "本步执行后应触发的结构不变量验证器清单。"
+    },
+    "cost": {
+      "type": "object",
+      "description": "本步操作成本（可选，用于排序/查找实验统计）。",
+      "properties": {
+        "comparisons": { "type": "integer", "minimum": 0, "default": 0 },
+        "reads": { "type": "integer", "minimum": 0, "default": 0 },
+        "writes": { "type": "integer", "minimum": 0, "default": 0 },
+        "swaps": { "type": "integer", "minimum": 0, "default": 0 },
+        "allocations": { "type": "integer", "minimum": 0, "default": 0 }
+      },
+      "additionalProperties": true
+    },
+    "codeMap": {
+      "type": "object",
+      "description": "语义步骤到各语言代码行的映射（替代静态单行号）。",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "integer", "minimum": 1 }
+      },
+      "example": { "cpp": [18, 19, 20], "java": [22, 23, 24], "python": [14, 15, 16] }
+    }
+  },
+  "required": ["message"],
+  "anyOf": [
+    { "required": ["visual"] },
+    { "required": ["codeMap"] }
+  ],
+  "additionalProperties": true
+}
