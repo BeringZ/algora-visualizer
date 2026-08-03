@@ -5,6 +5,6 @@
   "description": "带三语言真实代码联动的数据结构与算法可视化学习网站",
   "scripts": {
     "start": "python3 -m http.server 5173",
-    "test": "node quality/validators/run.js && node quality/check-modules.js"
+    "test": "node quality/validators/run.js && node quality/test-avl-trace.js && node quality/check-modules.js"
   }
 }
