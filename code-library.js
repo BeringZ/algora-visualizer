@@ -824,28 +824,51 @@ def build(weights: list[int]) -> Node:
     return heap[0]`);
 
     if (kind === 'avl') return pack(`
-struct Node { int key,height=1; Node* left=nullptr; Node* right=nullptr; };
-Node* rotateRight(Node* y);
+struct Node { int key, height = 1; Node* left = nullptr; Node* right = nullptr; };
+int height(Node* n) { return n ? n->height : 0; }
+Node* rotateRight(Node* y);  // 右旋：y 的左孩子 x 上提为子树根
+Node* rotateLeft(Node* x);   // 左旋：x 的右孩子 y 上提为子树根
 
 Node* insert(Node* root, int key) { /*@0*/
     if (!root) return new Node{key}; /*@1*/
-    if (key < root->key) root->left=insert(root->left,key); else root->right=insert(root->right,key); /*@2*/
-    int balance=(root->left?root->left->height:0)-(root->right?root->right->height:0);
-    if (balance > 1 && key < root->left->key) return rotateRight(root); /*@3*/
-    return root;
-}`, `
+    if (key < root->key) root->left = insert(root->left, key); /*@2*/
+    else root->right = insert(root->right, key);
+    root->height = 1 + std::max(height(root->left), height(root->right)); /*@3*/
+    int balance = height(root->left) - height(root->right); /*@4*/
+    if (balance > 1 && key < root->left->key) return rotateRight(root); /*@5*/
+    if (balance < -1 && key > root->right->key) return rotateLeft(root); /*@6*/
+    if (balance > 1) { root->left = rotateLeft(root->left); return rotateRight(root); } /*@7*/
+    if (balance < -1) { root->right = rotateRight(root->right); return rotateLeft(root); } /*@8*/
+    return root; /*@9*/
+}
+Node* rotateRight(Node* y) { Node* x = y->left; y->left = x->right; x->right = y;
+    y->height = 1 + std::max(height(y->left), height(y->right));
+    x->height = 1 + std::max(height(x->left), height(x->right)); return x; }
+Node* rotateLeft(Node* x) { Node* y = x->right; x->right = y->left; y->left = x;
+    x->height = 1 + std::max(height(x->left), height(x->right));
+    y->height = 1 + std::max(height(y->left), height(y->right)); return y; }`, `
 public final class AvlTree {
-    static final class Node { int key,height=1; Node left,right; Node(int k){key=k;} }
-    static Node rotateRight(Node y) { Node x=y.left; y.left=x.right; x.right=y; return x; }
+    static final class Node { int key, height = 1; Node left, right; Node(int k) { key = k; } }
+    static int height(Node n) { return n == null ? 0 : n.height; }
+    static Node rotateRight(Node y) { Node x = y.left; y.left = x.right; x.right = y;
+        y.height = 1 + Math.max(height(y.left), height(y.right));
+        x.height = 1 + Math.max(height(x.left), height(x.right)); return x; }
+    static Node rotateLeft(Node x) { Node y = x.right; x.right = y.left; y.left = x;
+        x.height = 1 + Math.max(height(x.left), height(x.right));
+        y.height = 1 + Math.max(height(y.left), height(y.right)); return y; }
 
     static Node insert(Node root, int key) { /*@0*/
         if (root == null) return new Node(key); /*@1*/
-        if (key < root.key) root.left=insert(root.left,key); else root.right=insert(root.right,key); /*@2*/
-        int balance=height(root.left)-height(root.right);
-        if (balance > 1 && key < root.left.key) return rotateRight(root); /*@3*/
-        return root;
+        if (key < root.key) root.left = insert(root.left, key); /*@2*/
+        else root.right = insert(root.right, key);
+        root.height = 1 + Math.max(height(root.left), height(root.right)); /*@3*/
+        int balance = height(root.left) - height(root.right); /*@4*/
+        if (balance > 1 && key < root.left.key) return rotateRight(root); /*@5*/
+        if (balance < -1 && key > root.right.key) return rotateLeft(root); /*@6*/
+        if (balance > 1) { root.left = rotateLeft(root.left); return rotateRight(root); } /*@7*/
+        if (balance < -1) { root.right = rotateRight(root.right); return rotateLeft(root); } /*@8*/
+        return root; /*@9*/
     }
-    static int height(Node n){return n==null?0:n.height;}
 }`, `
 from dataclasses import dataclass
 from typing import Optional
@@ -857,14 +880,32 @@ class Node:
     right: Optional["Node"] = None
     height: int = 1
 
+def height(n: Optional[Node]) -> int:
+    return n.height if n else 0
+
+def rotate_right(y: Node) -> Node:
+    x = y.left; y.left = x.right; x.right = y
+    y.height = 1 + max(height(y.left), height(y.right))
+    x.height = 1 + max(height(x.left), height(x.right))
+    return x
+
+def rotate_left(x: Node) -> Node:
+    y = x.right; x.right = y.left; y.left = x
+    x.height = 1 + max(height(x.left), height(x.right))
+    y.height = 1 + max(height(y.left), height(y.right))
+    return y
+
 def insert(root: Optional[Node], key: int) -> Node:  # @0
     if root is None: return Node(key)  # @1
-    if key < root.key: root.left = insert(root.left, key)
-    else: root.right = insert(root.right, key)  # @2
-    balance = height(root.left) - height(root.right)
-    if balance > 1 and key < root.left.key:
-        return rotate_right(root)  # @3
-    return root`);
+    if key < root.key: root.left = insert(root.left, key)  # @2
+    else: root.right = insert(root.right, key)
+    root.height = 1 + max(height(root.left), height(root.right))  # @3
+    balance = height(root.left) - height(root.right)  # @4
+    if balance > 1 and key < root.left.key: return rotate_right(root)  # @5
+    if balance < -1 and key > root.right.key: return rotate_left(root)  # @6
+    if balance > 1: root.left = rotate_left(root.left); return rotate_right(root)  # @7
+    if balance < -1: root.right = rotate_right(root.right); return rotate_left(root)  # @8
+    return root  # @9`);
 
     if (kind === 'red-black') return pack(`
 enum Color { RED, BLACK };
