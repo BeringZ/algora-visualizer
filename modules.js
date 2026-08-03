@@ -107,7 +107,9 @@ window.ALGORA_MODULES = [
   const L3 = new Set([
     'insertion-sort', 'binary-insertion-sort', 'shell-sort', 'bubble-sort',
     'quick-sort', 'selection-sort', 'heap-sort', 'merge-sort', 'radix-sort',
-    'bst', 'huffman'
+    'bst', 'huffman',
+    // I4-A/B：红黑树插入修复（变色/旋转+黑高）、B 树分裂/借位/合并 → L3 精讲
+    'red-black-tree', 'b-tree'
   ]);
   window.ALGORA_MODULES.forEach((m) => {
     if (m.level === undefined) m.level = L3.has(m.id) ? 'L3' : (L1.has(m.id) ? 'L1' : 'L2');
