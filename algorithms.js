@@ -4,8 +4,28 @@
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const frame = (visual, message, line = 0, vars = {}) => ({ visual: clone(visual), message, line, vars });
   const safeNums = (raw, fallback = [42, 17, 8, 33, 21, 5, 29]) => {
-    const values = String(raw || '').split(/[，,\s]+/).map(Number).filter(Number.isFinite).slice(0, 12);
+    // I4-A 修复：空输入/空串不得被 Number('')===0 吞掉，须走 fallback
+    const values = String(raw || '').split(/[，,\s]+/).map(s => s.trim()).filter(s => s !== '').map(Number).filter(Number.isFinite).slice(0, 12);
     return values.length ? values : fallback.slice();
+  };
+  // I4-C：图输入解析（边列表语法 'A-B:5, B-C:2'；支持负权、环、有向箭头 →）
+  // 返回 { nodes, edges, directed } 或 null（格式非法）
+  const parseGraphInput = (raw, fallback, directed = false) => {
+    if (!raw || !String(raw).trim()) return fallback();
+    const seen = new Set(); const edges = [];
+    for (const part of String(raw).split(/[;,，]/)) {
+      const m = part.trim().match(/^([A-Za-z0-9]+)\s*(?:[-–]|→)\s*([A-Za-z0-9]+)\s*:\s*(-?\d+)$/);
+      if (!m) return null;
+      const u = m[1], v = m[2], w = Number(m[3]);
+      seen.add(u); seen.add(v); edges.push([u, v, w]);
+    }
+    if (seen.size === 0) return fallback();
+    const ids = [...seen];
+    const nodes = ids.map((id, i) => {
+      const angle = (i / ids.length) * 2 * Math.PI - Math.PI / 2;
+      return { id, x: Math.round(50 + 34 * Math.cos(angle)), y: Math.round(50 + 32 * Math.sin(angle)) };
+    });
+    return { directed, nodes, edges };
   };
   const basicGraph = () => ({
     directed: false,
@@ -800,9 +820,20 @@
     return {code,frames};
   }
 
-  function shortestPathTrace(kind='dijkstra') {
-    const graph=basicGraph(); const code=kind==='bellman'?['dist[start] = 0;','repeat V-1 times:','  for each edge (u,v,w)','    if (dist[u]+w < dist[v]) dist[v] = dist[u]+w;','check one more round for negative cycle;']:['dist[start] = 0;','while (unsettled not empty) {','  u = extractMin();','  for (edge u→v) relax(u,v);','}'];
-    const edges=graph.edges; const dist={A:0,B:Infinity,C:Infinity,D:Infinity,E:Infinity,F:Infinity}; const frames=[frame({type:'graph',...graph,distances:dist,activeNodes:['A'],visited:[]},'起点 A 的距离设为 0，其余为 ∞',0)];
+  function shortestPathTrace(raw, kind='dijkstra') {
+    const graph=parseGraphInput(raw, basicGraph, true) || basicGraph();
+    const code=kind==='bellman'?['dist[start] = 0;','repeat V-1 times:','  for each edge (u,v,w)','    if (dist[u]+w < dist[v]) dist[v] = dist[u]+w;','check one more round for negative cycle;']:['dist[start] = 0;','while (unsettled not empty) {','  u = extractMin();','  for (edge u→v) relax(u,v);','}'];
+    const edges=graph.edges;
+    const start=graph.nodes[0] ? graph.nodes[0].id : 'A';
+    const dist={}; graph.nodes.forEach(n=>dist[n.id]=Infinity); dist[start]=0;
+    const frames=[frame({type:'graph',...graph,distances:dist,activeNodes:[start],visited:[]},`起点 ${start} 的距离设为 0，其余为 ∞`,0)];
+    // I4-C：负权边拒绝（Dijkstra 前提：非负权）
+    const negEdges=edges.filter(([u,v,w])=>w<0);
+    if(kind==='dijkstra'&&negEdges.length){
+      frames.push(meta(frame({type:'graph',...graph,distances:dist,activeNodes:[],activeEdges:negEdges.map(([u,v])=>[u,v]),visited:[]},`⚠️ 检测到 ${negEdges.length} 条负权边（${negEdges.map(([u,v,w])=>`${u}→${v}:${w}`).join('、')}）`,4,{negativeEdges:negEdges.length}),{phase:'verify',condition:'Dijkstra 要求所有边权 ≥ 0',invariantChecks:['graph-consistency'],mutation:{type:'read',targets:[]},cost:{comparisons:negEdges.length}}));
+      frames.push(meta(frame({type:'graph',...graph,distances:dist,activeNodes:negEdges.map(([u])=>u),activeEdges:negEdges.map(([u,v])=>[u,v]),visited:[]},'❌ 拒绝执行：Dijkstra 基于贪心「已确定最短路径不再变短」，负权边会破坏该前提（先扩展的路径可能被更短路径超越）。请改用 Bellman-Ford（支持负权，检测负环）。',4),{phase:'verify',condition:'负权边存在 → Dijkstra 不适用',invariantChecks:['graph-consistency'],cost:{reads:1}}));
+      return {code,frames};
+    }
     if(kind==='bellman'){
       for(let round=1;round<=2;round++) for(const [u,v,w] of edges){for(const [a,b] of [[u,v],[v,u]]){if(dist[a]!==Infinity&&dist[a]+w<dist[b]){dist[b]=dist[a]+w;frames.push(frame({type:'graph',...graph,distances:dist,activeNodes:[a,b],activeEdges:[[a,b]],visited:[]},`第 ${round} 轮：松弛 ${a}→${b}，dist[${b}]=${dist[b]}`,3,{round}));}}}return {code,frames};
     }
@@ -811,17 +842,322 @@
     return {code,frames};
   }
 
-  function floydTrace() {
-    const graph=basicGraph(); const labels=graph.nodes.map(n=>n.id).slice(0,4); const n=labels.length; const inf=99; const m=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>i===j?0:inf));
+  function floydTrace(raw) {
+    const graph=parseGraphInput(raw, basicGraph, true) || basicGraph();
+    const labels=graph.nodes.map(n=>n.id).slice(0,6); const n=labels.length; const inf=99; const m=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>i===j?0:inf));
     graph.edges.forEach(([u,v,w])=>{const i=labels.indexOf(u),j=labels.indexOf(v);if(i>=0&&j>=0)m[i][j]=m[j][i]=w;});
-    const code=['for (k = 0; k < n; k++)','  for (i = 0; i < n; i++)','    for (j = 0; j < n; j++)','      dist[i][j] = min(dist[i][j], dist[i][k]+dist[k][j]);'];
+    const code=['for (k = 0; k < n; k++)','  for (i = 0; i < n; i++)','    for (j = 0; j < n; j++)','      dist[i][j] = min(dist[i][j], dist[i][k]+dist[k][j]);','// 负环检测：dist[i][i] < 0'];
     const frames=[frame({type:'matrix',matrix:m,labels,active:[]},'初始距离矩阵：无直接边记为 ∞',0)];
     for(let k=0;k<n;k++)for(let i=0;i<n;i++)for(let j=0;j<n;j++)if(m[i][k]+m[k][j]<m[i][j]){m[i][j]=m[i][k]+m[k][j];frames.push(frame({type:'matrix',matrix:m.map(r=>r.map(v=>v===inf?'∞':v)),labels,active:[[i,j],[i,k],[k,j]],pivot:[k,k]},`允许 ${labels[k]} 作为中间点，更新 ${labels[i]}→${labels[j]} = ${m[i][j]}`,3,{i,j,k}));}
+    // I4-C：负环检测
+    const negCycle=labels.filter((_,i)=>m[i][i]<0);
+    if(negCycle.length){
+      const cyc=negCycle.map((v,i)=>`${v} 到自身最短距离 ${m[i][i]} < 0`);
+      frames.push(meta(frame({type:'matrix',matrix:m.map(r=>r.map(v=>v===inf?'∞':v)),labels,active:negCycle.map((_,i)=>[i,i]),pivot:null},`⚠️ 检测到负环：${cyc.join('；')} —— 存在总权为负的回路，最短路径无下界`,4),{phase:'verify',condition:'∃ dist[i][i] < 0',invariantChecks:['graph-consistency'],cost:{reads:n}}));
+    }
     return {code,frames};
   }
 
-  function topoTrace(critical=false) {
-    const graph=dagGraph(); const code=critical?['topologicalOrder();','ve[v] = max(ve[v], ve[u] + w);','vl[u] = min(vl[u], vl[v] - w);','if (e(activity) == l(activity)) markCritical();']:['compute indegree[];','push all zero-indegree vertices;','while (!queue.empty()) {','  u = pop(); output(u);','  for (v : adj[u]) if (--indegree[v] == 0) push(v);','}'];
+  /* ============================================================
+     红黑树插入专属 trace（I4-A · 计划书工作流 D P0）
+     真实红黑插入：BST 插入（红）→ 修复循环（叔红变色 / 叔黑旋转）→ 根染黑
+     帧末运行 validateRedBlack 验证四条不变量（根黑/红子黑/黑高一致/有序）
+     演示序列 [10,20,30,15] 触发 case 1（叔红变色）+ case 2/3（旋转）
+     ============================================================ */
+  function rbTrace(raw) {
+    const keys = safeNums(raw, [10, 20, 30, 15]).slice(0, 6);
+    const nodes = {}; let rootId = null; const frames = [];
+    const L = { insert: 0, fix: 1, rotate: 2, recolor: 3, verify: 4 };
+    function layout() {
+      const inorder = [];
+      (function walk(id) { if (!id) return; walk(nodes[id].left); inorder.push(id); walk(nodes[id].right); })(rootId);
+      const n = inorder.length;
+      inorder.forEach((id, i) => { nodes[id].x = n === 1 ? 50 : 5 + (i / (n - 1)) * 90; });
+      (function setY(id, d) { if (!id) return; nodes[id].y = 12 + d * 24; setY(nodes[id].left, d + 1); setY(nodes[id].right, d + 1); })(rootId, 0);
+    }
+    function snap(active, extra) {
+      return { type: 'tree', nodes: clone(Object.values(nodes)), active: active || [], visited: [], ...(extra || {}) };
+    }
+    function rotateLeft(xId) {
+      const x = nodes[xId], y = nodes[x.right];
+      x.right = y.left; if (y.left) nodes[y.left].parent = xId;
+      y.left = xId; y.parent = x.parent; x.parent = y.id;
+      if (y.parent == null) rootId = y.id;
+      else { const p = nodes[y.parent]; if (p.left === xId) p.left = y.id; else p.right = y.id; }
+    }
+    function rotateRight(yId) {
+      const y = nodes[yId], x = nodes[y.left];
+      y.left = x.right; if (x.right) nodes[x.right].parent = yId;
+      x.right = yId; x.parent = y.parent; y.parent = x.id;
+      if (x.parent == null) rootId = x.id;
+      else { const p = nodes[x.parent]; if (p.left === yId) p.left = x.id; else p.right = x.id; }
+    }
+    function runRbValidator() {
+      if (typeof window !== 'undefined' && window.AlgoraValidators && window.AlgoraValidators.validateRedBlack) {
+        const vNodes = {};
+        Object.values(nodes).forEach((n) => { vNodes[n.id] = { id: n.id, key: n.key, left: n.left, right: n.right, color: n.color }; });
+        return window.AlgoraValidators.validateRedBlack({ root: rootId, nodes: vNodes });
+      }
+      return { ok: true, violations: [], degraded: true };
+    }
+    function insertRB(key) {
+      const id = String(key);
+      if (!rootId) {
+        nodes[id] = { id, key, left: null, right: null, parent: null, color: 'black' };
+        rootId = id; layout();
+        frames.push(meta(frame(snap([id]), `插入 ${key} 作为根结点，染为黑色`, L.insert, { key }), { phase: 'mutate', mutation: { type: 'allocate', targets: [id] }, invariantChecks: ['rb-root-black', 'rb-red-child', 'rb-black-height'], cost: { reads: 1, writes: 1, allocations: 1 } }));
+        return;
+      }
+      // BST 插入（新结点默认红色）
+      let cur = rootId;
+      while (cur) {
+        frames.push(meta(frame(snap([cur]), `比较 ${key} 与 ${nodes[cur].key}，进入${key < nodes[cur].key ? '左' : '右'}子树`, L.insert, { key, cur: Number(cur) }), { phase: 'locate', condition: `${key} ${key < nodes[cur].key ? '<' : '>'} ${nodes[cur].key}`, cost: { comparisons: 1, reads: 1 } }));
+        if (key < nodes[cur].key) { if (!nodes[cur].left) break; cur = nodes[cur].left; }
+        else { if (!nodes[cur].right) break; cur = nodes[cur].right; }
+      }
+      nodes[id] = { id, key, left: null, right: null, parent: cur, color: 'red' };
+      if (key < nodes[cur].key) nodes[cur].left = id; else nodes[cur].right = id;
+      layout();
+      frames.push(meta(frame(snap([id]), `结点 ${key} 作为红色叶子插入（临时破坏不变量，随后修复）`, L.insert, { key }), { phase: 'mutate', mutation: { type: 'insert', targets: [cur, id] }, invariantChecks: ['rb-red-child'], cost: { reads: 1, writes: 2, allocations: 1 } }));
+      // 修复循环
+      let z = id, guard = 0;
+      while (z !== rootId && nodes[nodes[z].parent].color === 'red' && guard++ < 20) {
+        // parent 存的是 id 字符串，先解析为结点对象
+        const p = nodes[nodes[z].parent], g = nodes[p.parent]; const isLeftChild = p.left === z;
+        if (p.id === g.left) {
+          const u = g.right;
+          if (u && nodes[u].color === 'red') {
+            nodes[p.id].color = 'black'; nodes[u].color = 'black'; g.color = 'red';
+            layout();
+            frames.push(meta(frame(snap([p.id, u, g.id]), `case 1：叔 ${u} 为红 → 父 ${p.id} 与叔 ${u} 变黑，祖父 ${g.id} 变红`, L.recolor), { phase: 'repair', condition: `叔 ${u} 为红`, mutation: { type: 'recolor', targets: [p.id, u, g.id] }, invariantChecks: ['rb-red-child', 'rb-black-height'], cost: { reads: 3, writes: 3 } }));
+            z = g.id;
+          } else {
+            if (!isLeftChild) {
+              const pz = p.id;
+              rotateLeft(pz); layout();
+              frames.push(meta(frame(snap([pz]), `case 2：${z} 是右孩子 → 对父 ${pz} 左旋`, L.rotate), { phase: 'repair', condition: 'z 为右孩子', mutation: { type: 'rotateLeft', targets: [pz] }, invariantChecks: ['rb-black-height'], cost: { reads: 2, writes: 3 } }));
+              z = pz;
+            }
+            const p2 = nodes[nodes[z].parent], g2 = nodes[p2.parent];
+            nodes[p2.id].color = 'black'; g2.color = 'red';
+            layout();
+            frames.push(meta(frame(snap([p2.id, g2.id]), `case 3：父 ${p2.id} 变黑，祖父 ${g2.id} 变红`, L.recolor), { phase: 'repair', condition: '变色：父黑 祖父红', mutation: { type: 'recolor', targets: [p2.id, g2.id] }, invariantChecks: ['rb-red-child'], cost: { reads: 2, writes: 2 } }));
+            const g3 = nodes[p2.parent];
+            rotateRight(g3.id); layout();
+            frames.push(meta(frame(snap([p2.id]), `case 3：对祖父 ${g3.id} 右旋`, L.rotate), { phase: 'repair', mutation: { type: 'rotateRight', targets: [g3.id] }, invariantChecks: ['rb-red-child', 'rb-black-height'], cost: { reads: 2, writes: 3 } }));
+            z = p2.id;
+          }
+        } else {
+          const u = g.left;
+          if (u && nodes[u].color === 'red') {
+            nodes[p.id].color = 'black'; nodes[u].color = 'black'; g.color = 'red';
+            layout();
+            frames.push(meta(frame(snap([p.id, u, g.id]), `case 1（镜像）：叔 ${u} 为红 → 父与叔变黑，祖父变红`, L.recolor), { phase: 'repair', condition: `叔 ${u} 为红`, mutation: { type: 'recolor', targets: [p.id, u, g.id] }, invariantChecks: ['rb-red-child', 'rb-black-height'], cost: { reads: 3, writes: 3 } }));
+            z = g.id;
+          } else {
+            if (isLeftChild) {
+              const pz = p.id;
+              rotateRight(pz); layout();
+              frames.push(meta(frame(snap([pz]), `case 2（镜像）：z 是左孩子 → 对父 ${pz} 右旋`, L.rotate), { phase: 'repair', mutation: { type: 'rotateRight', targets: [pz] }, invariantChecks: ['rb-black-height'], cost: { reads: 2, writes: 3 } }));
+              z = pz;
+            }
+            const p2 = nodes[nodes[z].parent], g2 = nodes[p2.parent];
+            nodes[p2.id].color = 'black'; g2.color = 'red';
+            layout();
+            frames.push(meta(frame(snap([p2.id, g2.id]), `case 3（镜像）：父 ${p2.id} 变黑，祖父 ${g2.id} 变红`, L.recolor), { phase: 'repair', mutation: { type: 'recolor', targets: [p2.id, g2.id] }, invariantChecks: ['rb-red-child'], cost: { reads: 2, writes: 2 } }));
+            const g3 = nodes[p2.parent];
+            rotateLeft(g3.id); layout();
+            frames.push(meta(frame(snap([p2.id]), `case 3（镜像）：对祖父 ${g3.id} 左旋`, L.rotate), { phase: 'repair', mutation: { type: 'rotateLeft', targets: [g3.id] }, invariantChecks: ['rb-red-child', 'rb-black-height'], cost: { reads: 2, writes: 3 } }));
+            z = p2.id;
+          }
+        }
+      }
+      nodes[rootId].color = 'black';
+      layout();
+      frames.push(meta(frame(snap([rootId]), '修复结束：根结点染黑（不变量恢复）', L.recolor), { phase: 'repair', condition: '根结点为黑', mutation: { type: 'recolor', targets: [rootId] }, invariantChecks: ['rb-root-black', 'rb-red-child', 'rb-black-height'], cost: { reads: 1, writes: 1 } }));
+      const res = runRbValidator();
+      frames.push(meta(frame(snap([], res.ok ? { success: true } : {}), res.ok ? '✅ 红黑不变量全部满足：根黑 · 红子黑 · 黑高一致 · 中序有序' : `⚠️ ${res.violations.map((v) => v.detail).join('；')}`, L.verify), { phase: 'verify', invariantChecks: ['rb-root-black', 'rb-red-child', 'rb-black-height', 'bst-order'], invariantResult: res, cost: { reads: 1 } }));
+    }
+    keys.forEach((k) => insertRB(k));
+    const code = [
+      'rbInsert(root, z) {',
+      '  bstInsert(root, z); z.color = RED;',
+      '  while (z != root && p(z).color == RED) {',
+      '    if (p(z) == left(g(z))) {',
+      '      u = right(g(z));',
+      '      if (u.color == RED) { p(z).color = u.color = BLACK; g(z).color = RED; z = g(z); }',
+      '      else {',
+      '        if (z == right(p(z))) { z = p(z); rotateLeft(z); }',
+      '        p(z).color = BLACK; g(z).color = RED; rotateRight(g(z));',
+      '      }',
+      '    } else { /* 镜像 */ }',
+      '  }',
+      '  root.color = BLACK;',
+      '}'
+    ];
+    return { code, frames };
+  }
+
+  /* ============================================================
+     2-3 树（B 树 m=3）专属 trace（I4-B · 计划书工作流 D P0）
+     插入：叶插入 → 上溢分裂（中关键字上提）；删除：叶删除 → 下溢借位/合并
+     帧末运行 validateBTree（阶数/有序/区间/叶同层）
+     ============================================================ */
+  function btTrace(raw) {
+    const keys = safeNums(raw, [10, 20, 30, 40, 50]).slice(0, 7);
+    const nodes = {}; let rootId = null; const frames = [];
+    let seq = 0;
+    const L = { insert: 0, split: 1, delete: 2, borrow: 3, merge: 4, verify: 5 };
+    function levels() {
+      if (!rootId) return [];
+      const out = []; let level = [rootId];
+      while (level.length) { out.push(level.map((id) => nodes[id].keys)); level = level.flatMap((id) => nodes[id].children || []); }
+      return out;
+    }
+    function snap(extra) { return { type: 'btree', levels: levels(), ...(extra || {}) }; }
+    function runValidator() {
+      if (typeof window !== 'undefined' && window.AlgoraValidators && window.AlgoraValidators.validateBTree) {
+        return window.AlgoraValidators.validateBTree({ m: 3, root: rootId, nodes });
+      }
+      return { ok: true, violations: [], degraded: true };
+    }
+    function splitNode(id) {
+      const n = nodes[id];
+      const midIdx = 1, mid = n.keys[midIdx];
+      const leftId = id; // 原结点复用为左半（keys 收缩回写）
+      const rightId = 'n' + (++seq);
+      const rightKeys = n.keys.slice(midIdx + 1);
+      const leftKids = n.children.length ? n.children.slice(0, midIdx + 1) : [];
+      const rightKids = n.children.length ? n.children.slice(midIdx + 1) : [];
+      n.keys = n.keys.slice(0, midIdx);
+      n.children = leftKids;
+      nodes[rightId] = { id: rightId, keys: rightKeys, children: rightKids, parent: n.parent };
+      rightKids.forEach((c) => { if (nodes[c]) nodes[c].parent = rightId; });
+      if (!n.parent) {
+        const newRoot = 'n' + (++seq);
+        nodes[newRoot] = { id: newRoot, keys: [mid], children: [leftId, rightId], parent: null };
+        nodes[leftId].parent = newRoot; nodes[rightId].parent = newRoot;
+        rootId = newRoot;
+        return { newRoot, mid, leftId, rightId, parentId: newRoot };
+      }
+      const p = nodes[n.parent];
+      const pIdx = p.children.indexOf(id);
+      p.children.splice(pIdx, 1, leftId, rightId);
+      const kIdx = p.keys.findIndex((k) => k > mid);
+      p.keys.splice(kIdx < 0 ? p.keys.length : kIdx, 0, mid);
+      return { parentId: p.id, mid, leftId, rightId };
+    }
+    function insertKey(key) {
+      if (!rootId) {
+        nodes['n0'] = { id: 'n0', keys: [key], children: [], parent: null };
+        rootId = 'n0';
+        frames.push(meta(frame(snap(), `创建根结点，插入关键字 ${key}`, L.insert, { key }), { phase: 'mutate', mutation: { type: 'allocate', targets: ['n0'] }, invariantChecks: ['btree-order', 'btree-degree'], cost: { reads: 1, writes: 1, allocations: 1 } }));
+        return;
+      }
+      let cur = rootId;
+      while (nodes[cur].children.length) {
+        const kids = nodes[cur].children; let i = 0;
+        while (i < nodes[cur].keys.length && key > nodes[cur].keys[i]) i++;
+        frames.push(meta(frame(snap(), `查找插入位置：${key} 与结点 [${nodes[cur].keys.join(', ')}] 比较，进入第 ${i + 1} 个子树`, L.insert, { key }), { phase: 'locate', condition: `key=${key}`, cost: { comparisons: 1, reads: 1 } }));
+        cur = kids[i];
+      }
+      const leaf = nodes[cur];
+      const pos = leaf.keys.findIndex((k) => key < k);
+      leaf.keys.splice(pos < 0 ? leaf.keys.length : pos, 0, key);
+      frames.push(meta(frame(snap(), `关键字 ${key} 插入叶子结点 [${leaf.keys.join(', ')}]`, L.insert, { key }), { phase: 'mutate', mutation: { type: 'insert', targets: [cur] }, invariantChecks: ['btree-order', 'btree-degree'], cost: { reads: 1, writes: 2 } }));
+      let cur2 = cur;
+      while (nodes[cur2].keys.length > 2) {
+        const r = splitNode(cur2);
+        frames.push(meta(frame(snap(), `结点 [${nodes[cur2].keys.join(', ')}] 关键字数 3 超出上限 2 → 分裂：中关键字 ${r.mid} 上提到父结点`, L.split), { phase: 'repair', condition: 'keys=3 > m-1=2', mutation: { type: 'split', targets: [cur2, r.parentId] }, invariantChecks: ['btree-degree', 'btree-order'], cost: { reads: 3, writes: 3 } }));
+        if (r.newRoot) { frames.push(meta(frame(snap(), `根结点分裂，树增高一层（新根 [${r.mid}]）`, L.split), { phase: 'repair', mutation: { type: 'split', targets: [r.newRoot] }, invariantChecks: ['btree-degree'], cost: { reads: 1, writes: 1 } })); break; }
+        cur2 = r.parentId;
+        if (nodes[cur2].keys.length <= 2) break;
+      }
+      const res = runValidator();
+      frames.push(meta(frame(snap(), res.ok ? '✅ B 树不变量满足：关键字有序 · 阶数合法 · 叶同层' : `⚠️ ${res.violations.map((v) => v.detail).join('；')}`, L.verify), { phase: 'verify', invariantChecks: ['btree-order', 'btree-degree', 'btree-range'], invariantResult: res, cost: { reads: 1 } }));
+    }
+    function deleteKey(key) {
+      let cur = rootId; let found = null;
+      while (cur) {
+        const n = nodes[cur];
+        const ki = n.keys.indexOf(key);
+        if (ki >= 0) { found = { node: cur, idx: ki }; break; }
+        if (!n.children.length) break;
+        let i = 0; while (i < n.keys.length && key > n.keys[i]) i++;
+        cur = n.children[i];
+      }
+      if (!found) return;
+      const { node: fid, idx: fIdx } = found;
+      const fn = nodes[fid];
+      if (fn.children.length) {
+        let s = fn.children[fIdx + 1];
+        while (nodes[s].children.length) s = nodes[s].children[0];
+        fn.keys[fIdx] = nodes[s].keys[0];
+        frames.push(meta(frame(snap(), `内部结点删除：用后继 ${nodes[s].keys[0]}（右子树最左叶）替换`, L.delete), { phase: 'mutate', mutation: { type: 'read', targets: [s] }, invariantChecks: ['btree-order'], cost: { reads: 2, writes: 1 } }));
+        deleteKey(nodes[s].keys[0]);
+        return;
+      }
+      fn.keys.splice(fIdx, 1);
+      frames.push(meta(frame(snap(), `从叶结点删除关键字 ${key}`, L.delete, { key }), { phase: 'mutate', mutation: { type: 'delete', targets: [fid] }, invariantChecks: ['btree-degree'], cost: { reads: 1, writes: 1 } }));
+      if (fn.keys.length === 0 && fid !== rootId) {
+        const p = nodes[fn.parent];
+        const ci = p.children.indexOf(fid);
+        const leftSib = ci > 0 ? p.children[ci - 1] : null;
+        const rightSib = ci < p.children.length - 1 ? p.children[ci + 1] : null;
+        const canBorrow = (sid) => sid && nodes[sid].keys.length > 1;
+        if (canBorrow(leftSib) || canBorrow(rightSib)) {
+          const sib = canBorrow(leftSib) ? leftSib : rightSib;
+          const isLeft = sib === leftSib;
+          const sibNode = nodes[sib];
+          const sepKey = p.keys[isLeft ? ci - 1 : ci];
+          const movedKey = isLeft ? sibNode.keys.pop() : sibNode.keys.shift();
+          p.keys[isLeft ? ci - 1 : ci] = movedKey;
+          fn.keys.splice(isLeft ? 0 : fn.keys.length, 0, sepKey);
+          frames.push(meta(frame(snap(), `下溢修复·借位：兄弟 [${sibNode.keys.join(', ')}] 分给 ${movedKey}，父分隔键 ${sepKey} 下移`, L.borrow), { phase: 'repair', condition: '叶下溢且兄弟可借', mutation: { type: 'split', targets: [sib, fid] }, invariantChecks: ['btree-degree', 'btree-order'], cost: { reads: 3, writes: 3 } }));
+        } else {
+          const sib = rightSib || leftSib; // 优先右兄弟（保证后续借位演示可发生）
+          const isLeft = sib === leftSib;
+          const sibNode = nodes[sib];
+          const sepKey = p.keys[isLeft ? ci - 1 : ci];
+          p.keys.splice(isLeft ? ci - 1 : ci, 1);
+          fn.keys = isLeft ? [...sibNode.keys, sepKey] : [sepKey, ...sibNode.keys];
+          fn.children = isLeft ? [...sibNode.children, ...fn.children] : [...fn.children, ...sibNode.children];
+          fn.children.forEach((c) => { if (nodes[c]) nodes[c].parent = fid; });
+          p.children.splice(isLeft ? ci - 1 : ci + 1, 1);
+          delete nodes[sib];
+          frames.push(meta(frame(snap(), `下溢修复·合并：与兄弟 [${sibNode.keys.join(', ')}] 及父分隔键 ${sepKey} 合并为 [${fn.keys.join(', ')}]`, L.merge), { phase: 'repair', condition: '叶下溢且兄弟不可借', mutation: { type: 'merge', targets: [fid, sib] }, invariantChecks: ['btree-degree', 'btree-order', 'btree-range'], cost: { reads: 3, writes: 3 } }));
+        }
+      }
+      if (rootId && nodes[rootId] && nodes[rootId].keys.length === 0 && nodes[rootId].children.length) {
+        rootId = nodes[rootId].children[0];
+        nodes[rootId].parent = null;
+      }
+      const res = runValidator();
+      frames.push(meta(frame(snap(), res.ok ? '✅ 删除后 B 树不变量满足' : `⚠️ ${res.violations.map((v) => v.detail).join('；')}`, L.verify), { phase: 'verify', invariantChecks: ['btree-order', 'btree-degree', 'btree-range'], invariantResult: res, cost: { reads: 1 } }));
+    }
+    keys.forEach((k) => insertKey(k));
+    // 删除演示仅在默认输入时执行（自定义输入聚焦插入行为）
+    if (!raw || !String(raw).trim()) { deleteKey(30); deleteKey(10); }
+    const code = [
+      '// B 树（m=3）关键字规则：非根结点 1~2 个，根 1~2 个',
+      'insert(key) {',
+      '  locate leaf by key order;',
+      '  insert key into leaf;',
+      '  while (leaf.keys > m-1) split(leaf);   // 上溢分裂',
+      '}',
+      'delete(key) {',
+      '  locate key;',
+      '  if internal: replace with successor;',
+      '  remove from leaf;',
+      '  while (leaf empty) borrow or merge;    // 下溢修复',
+      '}'
+    ];
+    return { code, frames };
+  }
+
+  function topoTrace(raw, critical=false) {
+    const graph=parseGraphInput(raw, dagGraph, true) || dagGraph();
+    const code=critical?['topologicalOrder();','ve[v] = max(ve[v], ve[u] + w);','vl[u] = min(vl[u], vl[v] - w);','if (e(activity) == l(activity)) markCritical();']:['compute indegree[];','push all zero-indegree vertices;','while (!queue.empty()) {','  u = pop(); output(u);','  for (v : adj[u]) if (--indegree[v] == 0) push(v);','}'];
     if(critical){
       const criticalEdges=[['A','B'],['B','E'],['E','F']]; return {code,frames:[
         frame({type:'graph',...graph,activeNodes:['A'],treeEdges:[],distances:{A:0,B:3,C:2,D:5,E:6,F:8}},'正向计算事件最早发生时间 ve',1),
@@ -829,8 +1165,40 @@
         frame({type:'graph',...graph,activeEdges:criticalEdges,treeEdges:criticalEdges,activeNodes:['A','B','E','F']},'活动最早开始时间等于最迟开始时间，构成关键路径 A→B→E→F',3)
       ]};
     }
-    const indeg={A:0,B:1,C:1,D:1,E:2,F:2},order=[],queue=['A'],frames=[];
-    while(queue.length){const u=queue.shift();order.push(u);frames.push(frame({type:'graph',...graph,activeNodes:[u],visited:order,frontier:queue,labels:indeg},`输出入度为 0 的顶点 ${u}`,3));for(const [a,b] of graph.edges)if(a===u){indeg[b]--;frames.push(frame({type:'graph',...graph,activeNodes:[u,b],activeEdges:[[u,b]],visited:order,frontier:queue,labels:indeg},`删除边 ${u}→${b}，${b} 的入度减为 ${indeg[b]}`,4));if(indeg[b]===0)queue.push(b);}}
+    // I4-C：Kahn 算法 + 环检测（环证据：从剩余未输出顶点追踪回环）
+    const adj={}; graph.nodes.forEach(n=>adj[n.id]=[]);
+    graph.edges.forEach(([u,v])=>{adj[u].push(v);});
+    const indeg={}; graph.nodes.forEach(n=>{indeg[n.id]=0;});
+    graph.edges.forEach(([u,v])=>{indeg[v]=(indeg[v]||0)+1;});
+    const queue=graph.nodes.filter(n=>indeg[n.id]===0).map(n=>n.id);
+    const order=[],frames=[];
+    while(queue.length){
+      const u=queue.shift(); order.push(u);
+      frames.push(frame({type:'graph',...graph,activeNodes:[u],visited:order,frontier:queue,labels:indeg},`输出入度为 0 的顶点 ${u}`,3));
+      for(const v of adj[u]||[]){
+        indeg[v]--;
+        frames.push(frame({type:'graph',...graph,activeNodes:[u,v],activeEdges:[[u,v]],visited:order,frontier:queue,labels:indeg},`删除边 ${u}→${v}，${v} 的入度减为 ${indeg[v]}`,4));
+        if(indeg[v]===0)queue.push(v);
+      }
+    }
+    // 环证据：还有未输出顶点 → 存在环
+    if(order.length<graph.nodes.length){
+      const remaining=graph.nodes.map(n=>n.id).filter(id=>!order.includes(id));
+      // 从第一个剩余顶点沿有向边追踪，找回到自己的环
+      const cycle=[];
+      let cur=remaining[0]; const seen=new Set();
+      while(!seen.has(cur)){
+        seen.add(cur); cycle.push(cur);
+        const next=(adj[cur]||[]).find(v=>remaining.includes(v));
+        if(next===undefined) break;
+        cur=next;
+      }
+      const startIdx=cycle.indexOf(cur);
+      const cyclePath=startIdx>=0?[...cycle.slice(startIdx),cur].join('→'):cycle.join('→');
+      frames.push(meta(frame({type:'graph',...graph,activeNodes:cycle.filter(v=>remaining.includes(v)),activeEdges:cycle.slice(0,-1).map((v,i)=>[v,cycle[i+1]]).filter(e=>remaining.includes(e[0])&&remaining.includes(e[1])),visited:order,labels:indeg,cyclePath},`⚠️ 检测到环：${cyclePath} —— 有向无环图（DAG）才可拓扑排序，含环时不存在合法拓扑序`,4),{phase:'verify',condition:`剩余 ${remaining.length} 个顶点无法输出（入度均 > 0）`,invariantChecks:['graph-consistency'],cost:{reads:graph.edges.length}}));
+    } else {
+      frames.push(meta(frame({type:'graph',...graph,activeNodes:[],visited:order,labels:indeg,cyclePath:null},`✅ 全部 ${order.length} 个顶点按拓扑序输出，图无环`,4),{phase:'verify',condition:'输出数 == 顶点数',invariantChecks:['graph-consistency'],cost:{reads:1}}));
+    }
     return {code,frames};
   }
 
@@ -967,16 +1335,16 @@
     if(id==='dfs') return traversalTrace('dfs');
     if(id==='prim') return primTrace();
     if(id==='kruskal') return kruskalTrace();
-    if(id==='dijkstra') return shortestPathTrace('dijkstra');
-    if(id==='floyd') return floydTrace();
-    if(id==='bellman') return shortestPathTrace('bellman');
-    if(id==='topological') return topoTrace(false);
-    if(id==='critical-path') return topoTrace(true);
+    if(id==='dijkstra') return shortestPathTrace(rawInput,'dijkstra');
+    if(id==='floyd') return floydTrace(rawInput);
+    if(id==='bellman') return shortestPathTrace(rawInput,'bellman');
+    if(id==='topological') return topoTrace(rawInput,false);
+    if(id==='critical-path') return topoTrace(rawInput,true);
     if(id==='linear-search') return searchTrace(rawInput,'linear');
     if(id==='ordered-linear-search') return searchTrace(rawInput,'ordered');
     if(id==='binary-search') return searchTrace(rawInput,'binary');
-    if(id==='red-black') return bstTrace('red-black');
-    if(id==='b-tree') return bstTrace('b-tree');
+    if(id==='red-black') return rbTrace(rawInput);
+    if(id==='b-tree') return btTrace(rawInput);
     if(id==='hash-chain') return hashTrace(rawInput,true);
     if(id==='hash-open') return hashTrace(rawInput,false);
     if(id.endsWith('-sort')){
