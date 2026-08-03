@@ -52,6 +52,18 @@ console.log('—— 模块 tag 匹配 ——');
 const tags = all.map((q) => q.tag).filter(Boolean);
 check('含 sort/tree/queue/graph/linked 等模块标签', ['sort', 'tree', 'queue', 'graph', 'linked'].some((t) => tags.includes(t)), tags.join(','));
 
+console.log('—— 全模块覆盖（I7-C：category 归一化）——');
+vm.runInContext(fs.readFileSync(path.join(root, 'modules.js'), 'utf8'), sandbox, { filename: 'modules.js' });
+const MODS = sandbox.window.ALGORA_MODULES || sandbox.ALGORA_MODULES;
+const CATEGORY_TAG = { list: 'linked', 'stack-queue': 'queue', array: 'array', string: 'string', search: 'search', sort: 'sort', tree: 'tree', graph: 'graph' };
+const tagSet = new Set(tags);
+const uncovered = MODS.filter((m) => {
+  const catTag = m.category ? CATEGORY_TAG[m.category] : null;
+  return !(tagSet.has(m.demo) || (catTag && tagSet.has(catTag)));
+}).map((m) => m.id);
+const covered = MODS.length - uncovered.length;
+check(`模块全覆盖（${covered}/${MODS.length} ≥ 95%）`, covered / MODS.length >= 0.95, uncovered.join(', '));
+
 console.log('—— 题型语义抽查 ——');
 check('predict 题可预测输出', EX.predict.some((q) => /数组|结果是|结束后/.test(q.question)));
 check('debug 题含错误代码场景', EX.debug.some((q) => /代码|panic|错误/.test(q.question)));
