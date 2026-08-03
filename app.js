@@ -104,6 +104,9 @@
                   <input class="dataset-input" id="dataset" value="${escapeHtml(state.input)}" aria-label="输入数据" />
                   <button class="secondary-btn" id="apply-data">应用数据</button>
                   <button class="secondary-btn" id="random-data">随机</button>
+                  ${state.module.category==='sort'?`<div class="sort-input-set" id="sort-input-set">
+                    ${Object.keys(window.SORT_INPUTS||{}).map(k=>`<button class="mini-btn" data-inputset="${k}" title="输入集：${(window.SORT_INPUT_LABELS||{})[k]}">${(window.SORT_INPUT_LABELS||{})[k]}</button>`).join('')}
+                  </div>`:''}
                   <select class="speed-select" id="speed" aria-label="动画速度">
                     <option value="1300" ${state.speed===1300?'selected':''}>慢速</option>
                     <option value="800" ${state.speed===800?'selected':''}>正常</option>
@@ -144,6 +147,7 @@
                   <div class="message-main"><span class="step-badge" id="step-badge">1</span><div class="message-text" id="message-text"></div></div>
                   <div class="message-vars" id="message-vars"></div>
                   <div class="frame-meta" id="frame-meta" hidden></div>
+                  <div class="sort-stats" id="sort-stats" hidden></div>
                 </div>
               </article>
               <article class="panel code-panel">
@@ -264,6 +268,10 @@
     $('#random-data').onclick = () => applyRandom();
     $('#apply-data').onclick = () => rebuildTrace($('#dataset').value);
     $('#dataset').addEventListener('keydown',e=>{if(e.key==='Enter') rebuildTrace(e.target.value);});
+    $$('.sort-input-set .mini-btn').forEach(btn=>btn.onclick=()=>{
+      const gen=window.SORT_INPUTS&&window.SORT_INPUTS[btn.dataset.inputset];
+      if(gen) rebuildTrace(gen().join(', '));
+    });
     $('#prev-step').onclick = () => step(-1);
     $('#next-step').onclick = () => step(1);
     $('#play-step').onclick = togglePlayer;
@@ -366,6 +374,7 @@
     const activeLines=language.anchors[f.line] || [Math.min(f.line,language.lines.length-1)];
     const progress=state.trace.frames.length<=1?100:(state.index/(state.trace.frames.length-1))*100;
     $('#visual-content').innerHTML=renderVisual(f.visual,f.vars||{});
+    if(f.visual?.type==='matrix-map') bindMatrixMap(f.visual);
     $('#visual-content').style.transform=`scale(${state.zoom})`;
     $('#message-text').textContent=f.message;
     $('#stage-comment').textContent=f.message;
@@ -381,6 +390,7 @@
     $('#variable-list').innerHTML=variables.map(([k,v])=>`<div class="variable-row"><span>${escapeHtml(k)}</span><strong>${escapeHtml(formatVariable(v))}</strong></div>`).join('') || '<div class="variable-empty">当前步骤无显式变量</div>';
     $('#message-vars').textContent=variables.map(([k,v])=>`${k}=${formatVariable(v)}`).join('  ');
     renderFrameMeta(f);
+    renderSortStats(f);
     $('#code-wrap').innerHTML=language.lines.map((line,i)=>`<div class="code-line ${activeLines.includes(i)?'active':''}" data-line="${i}"><span class="line-number">${i+1}</span><code>${highlightCode(line,state.language)}</code></div>`).join('');
     const active=$('.code-line.active'); const codeWrap=$('#code-wrap');
     if(active && codeWrap) codeWrap.scrollTo({top:Math.max(0,active.offsetTop-codeWrap.clientHeight/2),behavior:'smooth'});
@@ -420,6 +430,26 @@
     }
     if (chips.length) { box.innerHTML = chips.join(''); box.hidden = false; }
     else { box.hidden = true; box.innerHTML = ''; }
+  }
+
+  // 排序实验统计面板（I2-D：比较/交换/写入累计 + 稳定性提示）
+  function renderSortStats(f) {
+    const box = $('#sort-stats');
+    if (!box) return;
+    const m = f._meta;
+    if (!m || !m.cost || !m.kind) { box.hidden = true; box.innerHTML = ''; return; }
+    const c = m.cost;
+    const dup = f.visual && f.visual.stability && f.visual.stability.some((x, i) => f.visual.stability[i] > 0 || (f.visual.values || []).some((v, j) => v === f.visual.values[i] && j !== i));
+    const kindNames = { insertion: '插入排序', binaryInsertion: '折半插入', shell: '希尔排序', bubble: '冒泡排序', quick: '快速排序', selection: '选择排序', heap: '堆排序', merge: '归并排序', radix: '基数排序' };
+    box.innerHTML = `
+      <div class="sort-stats-inner">
+        <span class="ss-kind">${kindNames[m.kind] || m.kind}</span>
+        <span class="ss-metric">比较 <b>${c.comparisons}</b></span>
+        <span class="ss-metric">交换 <b>${c.swaps}</b></span>
+        <span class="ss-metric">写入 <b>${c.writes}</b></span>
+        ${dup ? `<span class="ss-stability" title="重复值带身份编号，可观察排序稳定性">稳定性轨迹：5₁·5₂…</span>` : ''}
+      </div>`;
+    box.hidden = false;
   }
 
   function collectVariables(frame) {
@@ -465,8 +495,62 @@
 
   function renderVisual(v, vars={}) {
     if(!v) return '';
-    const renderers={array:renderArray,bars:renderBars,linked:renderLinked,'static-list':renderStaticList,stack:renderStack,queue:renderQueue,bracket:renderBracket,expression:renderExpression,matrix:renderMatrix,string:renderString,tree:renderTree,graph:renderGraph,btree:renderBTree,huffman:renderHuffman,hash:renderHash};
+    const renderers={array:renderArray,bars:renderBars,linked:renderLinked,'static-list':renderStaticList,stack:renderStack,queue:renderQueue,bracket:renderBracket,expression:renderExpression,matrix:renderMatrix,'matrix-map':renderMatrixMap,string:renderString,tree:renderTree,graph:renderGraph,btree:renderBTree,huffman:renderHuffman,hash:renderHash};
     return (renderers[v.type]||renderArray)(v,vars);
+  }
+
+  // ===== 矩阵压缩映射交互视图（I2-C · 工作流 C：原矩阵 ↔ 公式 ↔ 压缩存储 双向联动） =====
+  function renderMatrixMap(v) {
+    const n=v.n, matrix=v.matrix, storage=v.storage;
+    const cellCls=(i,j)=>v.activeCell&&v.activeCell[0]===i&&v.activeCell[1]===j?'active':'';
+    const slotCls=k=>v.activeSlot===k?'active':'';
+    const cells=matrix.map((row,i)=>row.map((x,j)=>`<td class="mm-cell ${cellCls(i,j)}" data-i="${i}" data-j="${j}" title="a[${i}][${j}]">${escapeHtml(x)}</td>`).join('')).map((r,i)=>`<tr><th class="mm-row-h">${i}</th>${r}</tr>`).join('');
+    const slots=storage.map((x,k)=>`<div class="mm-slot ${slotCls(k)}" data-k="${k}" title="storage[${k}]">${x===null?'—':escapeHtml(x)}<span class="mm-slot-idx">${k}</span></div>`).join('');
+    const kindLabel={ 'symmetric-lower':'对称矩阵 · 下三角', 'symmetric-upper':'对称矩阵 · 上三角', triangular:'三角矩阵 · 下三角', tridiagonal:'三对角矩阵' };
+    return `
+      <div class="mm-wrap">
+        <div class="mm-side">
+          <div class="mm-title">原矩阵 · ${n}×${n}（${v.spaceBefore} 元素）</div>
+          <table class="mm-matrix"><thead><tr><th></th>${Array.from({length:n},(_,j)=>`<th>${j}</th>`).join('')}</tr></thead><tbody>${cells}</tbody></table>
+          <div class="mm-tip">👆 点击矩阵元素查看映射</div>
+        </div>
+        <div class="mm-mid">
+          <div class="mm-arrow">⇄</div>
+          <div class="mm-formula" id="mm-formula">${v.formulaText || v.formula || ''}</div>
+          <div class="mm-space">空间：O(n²)=${v.spaceBefore} → 压缩 ${v.spaceAfter}（${Math.round(100*v.spaceAfter/v.spaceBefore)}%）</div>
+        </div>
+        <div class="mm-side">
+          <div class="mm-title">压缩存储 · ${storage.length} 槽</div>
+          <div class="mm-storage">${slots}</div>
+          <div class="mm-tip">👆 点击压缩槽反查原矩阵</div>
+        </div>
+      </div>`;
+  }
+  function bindMatrixMap(v) {
+    const root = document.querySelector('#visual-content');
+    if (!root || !window.AlgoraMatrixMap) return;
+    const formula = document.querySelector('#mm-formula');
+    const clickCell = root.querySelectorAll('.mm-cell');
+    const clickSlot = root.querySelectorAll('.mm-slot');
+    clickCell.forEach((el) => el.addEventListener('click', () => {
+      const i = Number(el.dataset.i), j = Number(el.dataset.j);
+      const r = window.AlgoraMatrixMap[v.kind](i, j, v.n);
+      document.querySelectorAll('.mm-cell').forEach((c) => c.classList.toggle('active', Number(c.dataset.i) === i && Number(c.dataset.j) === j));
+      document.querySelectorAll('.mm-slot').forEach((s) => s.classList.toggle('active', Number(s.dataset.k) === r.k));
+      if (formula) formula.textContent = `a[${i}][${j}] → ${r.formula} → storage[${r.k}] = ${v.storage[r.k]}`;
+      toast(`a[${i}][${j}] ↦ storage[${r.k}]`);
+    }));
+    clickSlot.forEach((el) => el.addEventListener('click', () => {
+      const k = Number(el.dataset.k);
+      let found = null;
+      for (let i = 0; i < v.n && !found; i++) for (let j = 0; j < v.n; j++) {
+        if (window.AlgoraMatrixMap[v.kind](i, j, v.n).k === k) { found = [i, j]; break; }
+      }
+      if (!found) { toast('该槽为空洞/常量区'); return; }
+      document.querySelectorAll('.mm-slot').forEach((s) => s.classList.toggle('active', Number(s.dataset.k) === k));
+      document.querySelectorAll('.mm-cell').forEach((c) => c.classList.toggle('active', Number(c.dataset.i) === found[0] && Number(c.dataset.j) === found[1]));
+      if (formula) formula.textContent = `storage[${k}] ← a[${found[0]}][${found[1]}]（${window.AlgoraMatrixMap[v.kind](found[0], found[1], v.n).formula}）`;
+    }));
   }
 
   function classFor(i,v) {
@@ -487,7 +571,10 @@
 
   function renderBars(v) {
     const max=Math.max(...v.values,1);
-    const bars=v.values.map((x,i)=>`<div class="bar-wrap"><div class="bar ${v.active?.includes(i)?'active':''} ${v.sorted?.includes(i)?'sorted':''}" style="height:${45+x/max*210}px">${x}</div><div class="bar-index">${i}</div></div>`).join('');
+    const bars=v.values.map((x,i)=>{
+      const dupId=v.stability&&v.stability[i]>0?`<sub>${v.stability[i]+1}</sub>`:'';
+      return `<div class="bar-wrap"><div class="bar ${v.active?.includes(i)?'active':''} ${v.sorted?.includes(i)?'sorted':''}" style="height:${45+x/max*210}px">${x}${dupId}</div><div class="bar-index">${i}</div></div>`;
+    }).join('');
     let buckets='';
     if(v.buckets) buckets=`<div class="bucket-line">${v.buckets.map((b,i)=>`<div class="bucket">${i}: ${b.join(', ')||'—'}</div>`).join('')}</div>`;
     return `<div class="bars-visual">${bars}</div>${buckets}${v.gap?`<div class="pointer-labels"><span class="pointer-pill">gap = ${v.gap}</span></div>`:''}`;
