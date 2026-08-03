@@ -255,6 +255,192 @@
     return {code,frames};
   }
 
+  /* ============================================================
+     AVL 插入专属 trace（I1-A 样板工程 · 计划书工作流 D）
+     真实 AVL 插入算法驱动：定位 → 插入 → 回溯更新高度 → 检测失衡 →
+     判定 LL/RR/LR/RL 并旋转 → 结构验证。每帧携带语义字段 _meta：
+       phase / condition / mutation / invariantChecks / cost
+     帧末调用 window.AlgoraValidators.validateAVL 做结构断言。
+     四种旋转可通过输入构造触发：
+       [30,20,10]→LL  [10,20,30]→RR  [30,10,20]→LR  [10,30,20]→RL
+     ============================================================ */
+  function avlTrace(raw) {
+    const keys = safeNums(raw, [30, 20, 10]).slice(0, 8);
+    const nodes = {};   // id -> { id, key, left, right, height, parent, x, y }
+    let rootId = null;
+    const frames = [];
+    // 行号与 code-library.js 的 AVL 代码 /*@N*/ 对应
+    const L = { enter: 0, create: 1, recurse: 2, height: 3, balance: 4, ll: 5, rr: 6, lr: 7, rl: 8, ret: 9 };
+    const meta = (f, m) => { f._meta = m; return f; };
+    const h = (id) => (nodes[id] ? nodes[id].height : 0);
+    const bf = (id) => (nodes[id] ? h(nodes[id].left) - h(nodes[id].right) : 0);
+
+    function layout() {
+      const inorder = [];
+      (function walk(id) { if (!id) return; walk(nodes[id].left); inorder.push(id); walk(nodes[id].right); })(rootId);
+      const n = inorder.length;
+      inorder.forEach((id, i) => { nodes[id].x = n === 1 ? 50 : 5 + (i / (n - 1)) * 90; });
+      (function setY(id, d) { if (!id) return; nodes[id].y = 12 + d * 24; setY(nodes[id].left, d + 1); setY(nodes[id].right, d + 1); })(rootId, 0);
+    }
+    function snap(active, extra) {
+      return { type: 'tree', nodes: clone(Object.values(nodes)), active: active || [], visited: [], ...(extra || {}) };
+    }
+    function updateHeight(id) { const n = nodes[id]; if (n) n.height = 1 + Math.max(h(n.left), h(n.right)); }
+
+    function rotateRight(yId) {
+      const y = nodes[yId], x = nodes[y.left];
+      y.left = x.right; if (x.right) nodes[x.right].parent = yId;
+      x.right = yId; x.parent = y.parent; y.parent = x.id;
+      if (x.parent == null) rootId = x.id;
+      else { const p = nodes[x.parent]; if (p.left === yId) p.left = x.id; else p.right = x.id; }
+      updateHeight(yId); updateHeight(x.id);
+      return x.id;
+    }
+    function rotateLeft(xId) {
+      const x = nodes[xId], y = nodes[x.right];
+      x.right = y.left; if (y.left) nodes[y.left].parent = xId;
+      y.left = xId; y.parent = x.parent; x.parent = y.id;
+      if (y.parent == null) rootId = y.id;
+      else { const p = nodes[y.parent]; if (p.left === xId) p.left = y.id; else p.right = y.id; }
+      updateHeight(xId); updateHeight(y.id);
+      return y.id;
+    }
+
+    function runValidator() {
+      if (typeof window !== 'undefined' && window.AlgoraValidators && window.AlgoraValidators.validateAVL) {
+        const vNodes = {};
+        Object.values(nodes).forEach((n) => { vNodes[n.id] = { id: n.id, key: n.key, left: n.left, right: n.right, parent: n.parent, height: n.height }; });
+        return window.AlgoraValidators.validateAVL({ root: rootId, nodes: vNodes });
+      }
+      return { ok: true, violations: [], degraded: true }; // 验证器未加载时优雅降级
+    }
+
+    const rotName = { LL: '右旋', RR: '左旋', LR: '先左旋后右旋', RL: '先右旋后左旋' };
+
+    function insert(key) {
+      const id = String(key);
+      // —— 空树：创建根 ——
+      if (!rootId) {
+        nodes[id] = { id, key, left: null, right: null, height: 1, parent: null };
+        rootId = id; layout();
+        frames.push(meta(frame(snap([id]), `插入 ${key} 作为根结点（高度 1 · 平衡因子 0）`, L.create, { key }), {
+          phase: 'mutate', mutation: { type: 'allocate', targets: [id] },
+          invariantChecks: ['bst-order', 'avl-balance', 'height-consistency'],
+          cost: { comparisons: 0, reads: 1, writes: 1, allocations: 1 }
+        }));
+        return;
+      }
+      // —— 定位插入位置 ——
+      let cur = rootId; const path = [];
+      while (cur) {
+        path.push(cur);
+        const goLeft = key < nodes[cur].key;
+        frames.push(meta(frame(snap([cur]), `比较 ${key} 与结点 ${cur}：${key} ${goLeft ? '<' : '>'} ${cur}，进入${goLeft ? '左' : '右'}子树`, L.recurse, { key, cur: Number(cur) }), {
+          phase: 'locate', condition: `${key} ${goLeft ? '<' : '>'} ${nodes[cur].key}`,
+          cost: { comparisons: 1, reads: 1 }
+        }));
+        if (goLeft) { if (!nodes[cur].left) break; cur = nodes[cur].left; }
+        else { if (!nodes[cur].right) break; cur = nodes[cur].right; }
+      }
+      // —— 插入新结点 ——
+      const parentId = cur;
+      nodes[id] = { id, key, left: null, right: null, height: 1, parent: parentId };
+      if (key < nodes[parentId].key) nodes[parentId].left = id; else nodes[parentId].right = id;
+      layout();
+      frames.push(meta(frame(snap([id]), `创建结点 ${key}，挂到 ${parentId} 的${key < nodes[parentId].key ? '左' : '右'}子树（叶子高度 1）`, L.create, { key }), {
+        phase: 'mutate', mutation: { type: 'insert', targets: [parentId, id] },
+        invariantChecks: ['bst-order'],
+        cost: { comparisons: 1, reads: 1, writes: 2, allocations: 1 }
+      }));
+      // —— 回溯更新高度 + 检测失衡 ——
+      let unbalanced = null, rotType = null;
+      for (let i = path.length - 1; i >= 0; i--) {
+        const p = path[i]; updateHeight(p);
+        frames.push(meta(frame(snap([p]), `回溯：结点 ${p} 高度更新为 ${nodes[p].height}`, L.height, { height: nodes[p].height }), {
+          phase: 'repair', condition: 'height = 1 + max(h(left), h(right))',
+          invariantChecks: ['height-consistency'],
+          cost: { reads: 2, writes: 1 }
+        }));
+        const bal = bf(p);
+        frames.push(meta(frame(snap([p]), `计算结点 ${p} 平衡因子 = ${bal}${Math.abs(bal) > 1 ? ' —— 超出 [-1,1]，失衡！' : ''}`, L.balance, { balance: bal }), {
+          phase: 'repair', condition: `balance = h(left) − h(right) = ${bal}`,
+          invariantChecks: ['avl-balance'], cost: { comparisons: 1, reads: 2 }
+        }));
+        if (Math.abs(bal) > 1) { unbalanced = p; break; }
+      }
+      // —— 判定旋转类型并执行 ——
+      if (unbalanced) {
+        const bal = bf(unbalanced);
+        if (bal > 1) rotType = (key < nodes[nodes[unbalanced].left].key) ? 'LL' : 'LR';
+        else rotType = (key > nodes[nodes[unbalanced].right].key) ? 'RR' : 'RL';
+        const primaryRot = (rotType === 'LL' || rotType === 'LR') ? 'rotateRight' : 'rotateLeft';
+        frames.push(meta(frame(snap([unbalanced]), `结点 ${unbalanced} 失衡（平衡因子 ${bal}），判定为 ${rotType} 型，执行${rotName[rotType]}`, L[rotType === 'LL' ? 'll' : rotType === 'RR' ? 'rr' : rotType === 'LR' ? 'lr' : 'rl'], { balance: bal }), {
+          phase: 'repair', condition: `${rotType}：balance=${bal}, 新结点 key=${key}`,
+          mutation: { type: primaryRot, targets: [unbalanced] },
+          invariantChecks: ['avl-balance', 'height-consistency'],
+          cost: { comparisons: 1, reads: 3, writes: 3, swaps: 1 }
+        }));
+        if (rotType === 'LL') rotateRight(unbalanced);
+        else if (rotType === 'RR') rotateLeft(unbalanced);
+        else if (rotType === 'LR') {
+          // 双旋第一步：对失衡结点左孩子先左旋
+          const leftId = nodes[unbalanced].left;
+          rotateLeft(leftId); layout();
+          frames.push(meta(frame(snap([leftId]), `LR 双旋第一步：对左孩子 ${leftId} 执行左旋`, L.lr), {
+            phase: 'repair', mutation: { type: 'rotateLeft', targets: [leftId] },
+            invariantChecks: ['height-consistency'], cost: { reads: 2, writes: 2 }
+          }));
+          rotateRight(unbalanced); // 第二步：失衡结点右旋
+        } else {
+          // RL 双旋第一步：对失衡结点右孩子先右旋
+          const rightId = nodes[unbalanced].right;
+          rotateRight(rightId); layout();
+          frames.push(meta(frame(snap([rightId]), `RL 双旋第一步：对右孩子 ${rightId} 执行右旋`, L.rl), {
+            phase: 'repair', mutation: { type: 'rotateRight', targets: [rightId] },
+            invariantChecks: ['height-consistency'], cost: { reads: 2, writes: 2 }
+          }));
+          rotateLeft(unbalanced); // 第二步：失衡结点左旋
+        }
+        layout();
+        frames.push(meta(frame(snap([rootId], { rotated: true }), `${rotName[rotType]}完成，树恢复平衡`, L.ret), {
+          phase: 'repair',
+          mutation: { type: 'rotate', targets: [rootId] },
+          invariantChecks: ['bst-order', 'avl-balance', 'height-consistency'],
+          cost: { reads: 2, writes: 2 }
+        }));
+      }
+      // —— 结构验证 ——
+      const res = runValidator();
+      frames.push(meta(frame(snap([], res.ok ? { success: true } : {}),
+        res.ok
+          ? (res.degraded ? '（验证器未加载，跳过结构断言）' : '✅ 结构验证通过：中序有序 · 高度一致 · 平衡因子 ∈ [-1,1]')
+          : `⚠️ 结构验证失败：${res.violations.map((v) => v.detail).join('；')}`,
+        L.ret), {
+        phase: 'verify',
+        invariantChecks: ['bst-order', 'avl-balance', 'height-consistency'],
+        invariantResult: res,
+        cost: { reads: 1 }
+      }));
+    }
+
+    keys.forEach((k) => insert(k));
+    const code = [
+      'Node* insert(Node* root, int key) {',
+      '  if (!root) return new Node(key);',
+      '  if (key < root->key) root->left = insert(root->left, key);',
+      '  else root->right = insert(root->right, key);',
+      '  root->height = 1 + max(height(root->left), height(root->right));',
+      '  int balance = height(root->left) - height(root->right);',
+      '  if (balance > 1 && key < root->left->key) return rotateRight(root); // LL',
+      '  if (balance < -1 && key > root->right->key) return rotateLeft(root); // RR',
+      '  if (balance > 1) { root->left = rotateLeft(root->left); return rotateRight(root); } // LR',
+      '  if (balance < -1) { root->right = rotateRight(root->right); return rotateLeft(root); } // RL',
+      '  return root;',
+      '}'
+    ];
+    return { code, frames };
+  }
+
   function huffmanTrace() {
     const code=['put all weights into minHeap;','while (heap.size() > 1) {','  Node a = heap.popMin();','  Node b = heap.popMin();','  heap.push(new Node(a.weight + b.weight, a, b));','}'];
     const frames=[
@@ -432,7 +618,7 @@
     if(id==='bst') return bstTrace('bst');
     if(id==='huffman') return huffmanTrace();
     if(id==='threaded') return treeTrace('threaded');
-    if(id==='avl') return bstTrace('avl');
+    if(id==='avl') return avlTrace(rawInput);
     if(id==='adj-matrix') return graphStorageTrace(true);
     if(id==='adj-list') return graphStorageTrace(false);
     if(id==='bfs') return traversalTrace('bfs');
