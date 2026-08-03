@@ -5,6 +5,6 @@
   "description": "带三语言真实代码联动的数据结构与算法可视化学习网站",
   "scripts": {
     "start": "python3 -m http.server 5173",
-    "test": "node quality/validators/run.js && node quality/test-avl-trace.js && node quality/test-linked-error.js && node quality/test-stack-queue.js && node quality/test-matrix-map.js && node quality/test-sort-stats.js && node quality/test-bst-delete.js && node quality/test-quick-pivot.js && node quality/test-huffman.js && node quality/check-modules.js"
+    "test": "node quality/validators/run.js && node quality/test-avl-trace.js && node quality/test-linked-error.js && node quality/test-stack-queue.js && node quality/test-matrix-map.js && node quality/test-sort-stats.js && node quality/test-bst-delete.js && node quality/test-quick-pivot.js && node quality/test-huffman.js && node quality/test-rb.js && node quality/test-graph-guards.js && node quality/test-btree.js && node quality/check-modules.js"
   }
 }
