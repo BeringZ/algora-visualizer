@@ -366,3 +366,49 @@ a { color: inherit; text-decoration: none; }
 .ptr-label.ptr-top { border-color: #d78822; color: #d78822; }
 .ptr-label.ptr-front { border-color: #178869; color: #178869; }
 .ptr-label.ptr-rear { border-color: #5664e8; color: #5664e8; }
+
+/* ===== 矩阵压缩映射交互（I2-C · 原矩阵 ↔ 公式 ↔ 压缩存储 双向联动） ===== */
+.mm-wrap { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; padding: 8px 4px; }
+.mm-side { flex: 0 0 auto; }
+.mm-title { font-size: 12px; font-weight: 800; color: var(--muted); margin-bottom: 8px; letter-spacing: .03em; }
+.mm-matrix { border-collapse: collapse; }
+.mm-matrix th { font-size: 10px; color: var(--muted); padding: 3px 7px; font-weight: 600; }
+.mm-cell {
+  width: 42px; height: 42px; text-align: center; border: 1.5px solid var(--border);
+  background: var(--surface-2); color: var(--text); font-weight: 700; cursor: pointer;
+  transition: background .15s, transform .15s, border-color .15s;
+}
+.mm-cell:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.mm-cell.active { background: var(--accent); color: #fff; border-color: var(--accent); transform: scale(1.12); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.mm-mid { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 30px; max-width: 240px; }
+.mm-arrow { font-size: 26px; color: var(--accent); }
+.mm-formula { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); background: var(--surface-2); border: 1px dashed var(--border); border-radius: 8px; padding: 8px 12px; text-align: center; min-height: 34px; display: flex; align-items: center; }
+.mm-space { font-size: 11px; color: var(--muted); font-weight: 700; }
+.mm-storage { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; max-width: 300px; }
+.mm-slot {
+  position: relative; height: 44px; display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--border); border-radius: 8px; background: var(--surface-2);
+  color: var(--text); font-weight: 700; cursor: pointer; transition: background .15s, transform .15s, border-color .15s;
+}
+.mm-slot:hover { background: color-mix(in srgb, var(--success) 14%, transparent); }
+.mm-slot.active { background: var(--success); color: #fff; border-color: var(--success); transform: scale(1.1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 30%, transparent); }
+.mm-slot-idx { position: absolute; bottom: -1px; right: 4px; font-size: 8.5px; color: inherit; opacity: .7; }
+.mm-tip { font-size: 10.5px; color: var(--muted); margin-top: 7px; }
+
+/* ===== 排序实验：输入集 + 统计面板 + 稳定性身份编号（I2-D） ===== */
+.sort-input-set { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+.mini-btn {
+  font-size: 11px; font-weight: 700; padding: 6px 10px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--surface-2); color: var(--muted); cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.mini-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border-color: var(--accent); }
+.sort-stats[hidden] { display: none; }
+.sort-stats { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.sort-stats-inner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ss-kind { font-size: 11px; font-weight: 800; color: var(--accent); padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ss-metric { font-size: 11.5px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+.ss-metric b { color: var(--text); font-size: 13px; }
+.ss-stability { font-size: 11px; color: var(--warning); font-weight: 700; }
+.bar sub { font-size: 9px; color: var(--warning); font-weight: 800; }
