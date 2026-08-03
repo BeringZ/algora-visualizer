@@ -496,8 +496,13 @@
   function renderLinked(v) {
     const node=(value,i,extra='')=>{
       const cls=`node ${v.doubly?'double':''} ${v.active?.includes(i)?'active':''} ${v.inserted?.includes(i)?'inserted':''} ${v.selfLoop===i?'self-loop':''}${v.errorOrder?' error-order':''}`;
-      if(v.doubly) return `<div class="${cls}"><span class="node-pointer">←</span><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span>${v.selfLoop===i?'<span class="loop-badge">↻ 自环</span>':''}</div>`;
-      return `<div class="${cls}"><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span>${v.selfLoop===i?'<span class="loop-badge">↻ 自环</span>':''}</div>`;
+      // 指针标签（链栈 top / 链队列 front·rear）
+      let label='';
+      if(v.topIndex===i) label='<span class="ptr-label ptr-top">top</span>';
+      if(v.frontIndex===i) label+='<span class="ptr-label ptr-front">front</span>';
+      if(v.rearIndex===i) label+='<span class="ptr-label ptr-rear">rear</span>';
+      if(v.doubly) return `<div class="${cls}"><span class="node-pointer">←</span><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span>${label}${v.selfLoop===i?'<span class="loop-badge">↻ 自环</span>':''}</div>`;
+      return `<div class="${cls}"><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span>${label}${v.selfLoop===i?'<span class="loop-badge">↻ 自环</span>':''}</div>`;
     };
     const floating=v.floating!==undefined?`<div class="floating-node">${node(v.floating,-1)}</div>`:'';
     const row=(v.values||[]).map((x,i)=>`${node(x,i)}${i<v.values.length-1?'<span class="arrow">→</span>':''}`).join('');
