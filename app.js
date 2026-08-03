@@ -495,13 +495,13 @@
 
   function renderLinked(v) {
     const node=(value,i,extra='')=>{
-      const cls=`node ${v.doubly?'double':''} ${v.active?.includes(i)?'active':''} ${v.inserted?.includes(i)?'inserted':''}`;
-      if(v.doubly) return `<div class="${cls}"><span class="node-pointer">←</span><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span></div>`;
-      return `<div class="${cls}"><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span></div>`;
+      const cls=`node ${v.doubly?'double':''} ${v.active?.includes(i)?'active':''} ${v.inserted?.includes(i)?'inserted':''} ${v.selfLoop===i?'self-loop':''}${v.errorOrder?' error-order':''}`;
+      if(v.doubly) return `<div class="${cls}"><span class="node-pointer">←</span><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span>${v.selfLoop===i?'<span class="loop-badge">↻ 自环</span>':''}</div>`;
+      return `<div class="${cls}"><span class="node-value">${escapeHtml(value)}</span><span class="node-pointer">→</span>${v.selfLoop===i?'<span class="loop-badge">↻ 自环</span>':''}</div>`;
     };
     const floating=v.floating!==undefined?`<div class="floating-node">${node(v.floating,-1)}</div>`:'';
     const row=(v.values||[]).map((x,i)=>`${node(x,i)}${i<v.values.length-1?'<span class="arrow">→</span>':''}`).join('');
-    return `${floating}<div class="linked-visual">${row}${v.circular?'<span class="arrow">↩</span>':'<span class="pointer-pill">NULL</span>'}</div>${v.circular?'<div class="circular-note">尾结点重新连接到首结点</div>':''}`;
+    return `${floating}<div class="linked-visual">${row}${v.selfLoop!==undefined?'<span class="loop-warning">⚠️ 链表成环，尾结点不指向 NULL</span>':(v.circular?'<span class="arrow">↩</span>':'<span class="pointer-pill">NULL</span>')}</div>${v.circular?'<div class="circular-note">尾结点重新连接到首结点</div>':''}`;
   }
 
   function renderStaticList(v) {

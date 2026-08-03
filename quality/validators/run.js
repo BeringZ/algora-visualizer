@@ -11,6 +11,7 @@
 const { validateBST } = require('./validateBST.js');
 const { validateAVL } = require('./validateAVL.js');
 const { validateCircularQueue } = require('./validateCircularQueue.js');
+const { validateLinkedList } = require('./validateLinkedList.js');
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -127,6 +128,28 @@ console.log('—— validateCircularQueue ——');
   expect('count 队列 size 与槽位不符被捕获', validateCircularQueue({ capacity: 5, front: 0, rear: 2, size: 4, mode: 'count', values: [1, 2, null, null, null] }), false, ['contents-count']);
   expect('capacity 非法被拒绝', validateCircularQueue({ capacity: 0, front: 0, rear: 0, mode: 'count', size: 0 }), false, ['capacity']);
   expect('索引越界被捕获', validateCircularQueue({ capacity: 5, front: 6, rear: 0, mode: 'count', size: 0 }), false, ['index-range']);
+}
+
+console.log('—— validateLinkedList ——');
+{
+  const mk = (pairs) => { const nodes = {}; pairs.forEach(([id, value, next]) => { nodes[id] = { id, value, next }; }); return nodes; };
+  const valid = { head: 'n1', nodes: mk([['n1', 18, 'n2'], ['n2', 27, 'n3'], ['n3', 35, null]]) };
+  expect('合法链表通过', validateLinkedList(valid), true);
+
+  const cycle = { head: 'n1', nodes: mk([['n1', 18, 'n2'], ['n2', 27, 'n1']]) };
+  expect('自环/环被捕获', validateLinkedList(cycle), false, ['cycle']);
+
+  const broken = { head: 'n1', nodes: mk([['n1', 18, 'n2'], ['n2', 27, 'n3'], ['n3', 35, null], ['n4', 99, null]]) };
+  expect('悬空结点被捕获', validateLinkedList(broken), false, ['unreachable']);
+
+  const multiParent = { head: 'n1', nodes: mk([['n1', 18, 'n3'], ['n2', 27, 'n3'], ['n3', 35, null]]) };
+  expect('多前驱引用被捕获', validateLinkedList(multiParent), false, ['multi-parent']);
+
+  const lenMismatch = { head: 'n1', length: 5, nodes: mk([['n1', 18, 'n2'], ['n2', 27, null]]) };
+  expect('长度不一致被捕获', validateLinkedList(lenMismatch), false, ['length-mismatch']);
+
+  const badRef = { head: 'n1', nodes: mk([['n1', 18, 'ghost']]) };
+  expect('next 引用悬空被捕获', validateLinkedList(badRef), false, ['next-ref']);
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`);

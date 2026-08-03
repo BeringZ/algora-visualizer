@@ -32,6 +32,17 @@
     { id:'10', x:14, y:68, parent:'20' }, { id:'30', x:39, y:68, parent:'20' },
     { id:'50', x:62, y:68, parent:'60' }, { id:'70', x:86, y:68, parent:'60' }
   ];
+  // 帧语义字段（计划书工作流 A：phase/mutation/invariantChecks/cost）
+  const meta = (f, m) => { f._meta = m; return f; };
+  // 用 validateLinkedList 检测「错误顺序」演示后的结构（自环/断链）
+  function runLinkedListValidator(values, selfIdx, headIdx) {
+    const fail = { ok: false, violations: [{ type: 'cycle', nodeId: String(values[selfIdx]), detail: `检测到环：新结点 ${values[selfIdx]} 的 next 指向自身（先覆盖前驱指针所致）` }] };
+    if (typeof window === 'undefined' || !window.AlgoraValidators || !window.AlgoraValidators.validateLinkedList) return fail;
+    const nodes = {};
+    values.forEach((v, i) => { nodes['n' + i] = { id: 'n' + i, value: v, next: i === values.length - 1 ? null : 'n' + (i + 1) }; });
+    nodes['n' + selfIdx].next = 'n' + selfIdx; // 错误顺序：指向自己
+    return window.AlgoraValidators.validateLinkedList({ head: 'n' + headIdx, nodes });
+  }
 
   function sequenceTrace(raw) {
     const arr = safeNums(raw, [12, 24, 31, 46, 58]).slice(0, 7);
@@ -88,6 +99,31 @@
     const next = base.slice(); next.splice(pos+1,0,99);
     frames.push(frame({type:'linked', values:next, active:[pos+1], inserted:[pos+1], ...flags}, '前驱结点改为指向新结点', 5));
     frames.push(frame({type:'linked', values:next, active:[], success:true, ...flags}, '插入完成', 6));
+
+    /* —— 错误顺序演示（计划书工作流 B：至少提供一个会破坏结构的错误代码，允许用户诊断）——
+       正确顺序：s.next = p.next; p.next = s;（先挂后继，再改前驱）
+       错误顺序：p.next = s; s.next = p.next;（先覆盖前驱 → s.next 指向自己 → 自环） */
+    const broken = base.slice(); broken.splice(pos + 1, 0, 99); // 新结点插入位置
+    frames.push(meta(frame({ type: 'linked', values: base, active: [pos], floating: 99, errorOrder: true, ...flags },
+      '⚠️ 错误顺序演示：插入时若「先让前驱指向新结点」，会发生什么？', 0), {
+      phase: 'locate', condition: '错误顺序：p.next = s; s.next = p.next;',
+      mutation: { type: 'write', targets: [String(base[pos])] },
+      invariantChecks: ['linked-next'], cost: { reads: 1, writes: 1 }
+    }));
+    frames.push(meta(frame({ type: 'linked', values: broken, active: [pos, pos + 1], selfLoop: pos + 1, errorOrder: true, ...flags },
+      `前驱 ${base[pos]} 先指向新结点 99，原后继 ${base[pos + 1]} 的引用被覆盖丢失`, 0), {
+      phase: 'mutate', condition: 'p.next = s（先覆盖前驱指针）',
+      mutation: { type: 'write', targets: [String(base[pos]), '99'] },
+      invariantChecks: ['linked-next'], cost: { reads: 1, writes: 1 }
+    }));
+    const lres = runLinkedListValidator(broken, pos + 1, head ? 0 : 0);
+    frames.push(meta(frame({ type: 'linked', values: broken, active: [pos + 1], selfLoop: pos + 1, errorOrder: true, ...flags },
+      '再执行 s.next = p.next：此时 p.next 已是 s，新结点指向自身 → 链表成环。结构验证器立即捕获！', 1), {
+      phase: 'verify', condition: 's.next = p.next（p.next 已被覆盖为 s）',
+      mutation: { type: 'write', targets: ['99'] },
+      invariantChecks: ['linked-next'], invariantResult: lres,
+      cost: { reads: 1, writes: 1 }
+    }));
     return { code, frames };
   }
 
