@@ -353,3 +353,16 @@ a { color: inherit; text-decoration: none; }
   margin-left: 10px; font-size: 11px; font-weight: 700; color: var(--danger);
 }
 @keyframes errPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* ===== 链栈/链队列指针标签（工作流 B：结点 + top/front/rear 指针视图） ===== */
+.linked-visual .node { position: relative; }
+.ptr-label {
+  position: absolute; bottom: -12px; left: 50%; transform: translateX(-50%);
+  font-size: 8.5px; font-weight: 800; letter-spacing: .04em;
+  padding: 1px 7px 2px; border-radius: 999px; white-space: nowrap;
+  border: 1.5px solid var(--ink, #5664e8); color: var(--ink, #5664e8);
+  background: #fff;
+}
+.ptr-label.ptr-top { border-color: #d78822; color: #d78822; }
+.ptr-label.ptr-front { border-color: #178869; color: #178869; }
+.ptr-label.ptr-rear { border-color: #5664e8; color: #5664e8; }
