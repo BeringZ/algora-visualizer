@@ -412,3 +412,16 @@ a { color: inherit; text-decoration: none; }
 .ss-metric b { color: var(--text); font-size: 13px; }
 .ss-stability { font-size: 11px; color: var(--warning); font-weight: 700; }
 .bar sub { font-size: 9px; color: var(--warning); font-weight: 800; }
+
+/* ===== 快排枢轴策略选择（I3-B） ===== */
+.pivot-sep { font-size: 10.5px; color: var(--muted); font-weight: 800; margin: 0 2px 0 8px; align-self: center; }
+.mini-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* ===== 哈夫曼编码表（I3-C） ===== */
+.huffman-codes { margin-top: 14px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 12px; background: var(--surface-2); }
+.huffman-codes-title { font-size: 11px; font-weight: 800; color: var(--accent); margin-bottom: 8px; letter-spacing: .04em; }
+.huffman-codes-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.h-code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; padding: 5px 10px; border-radius: 8px; background: #fff; border: 1.5px solid var(--border); }
+.h-code b { color: var(--text); }
+.h-code i { color: var(--success); font-style: normal; font-weight: 800; }
+.huffman-merge { font-size: 11px; color: var(--warning); font-weight: 700; margin-top: 6px; }
