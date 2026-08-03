@@ -106,6 +106,8 @@
                   <button class="secondary-btn" id="random-data">随机</button>
                   ${state.module.category==='sort'?`<div class="sort-input-set" id="sort-input-set">
                     ${Object.keys(window.SORT_INPUTS||{}).map(k=>`<button class="mini-btn" data-inputset="${k}" title="输入集：${(window.SORT_INPUT_LABELS||{})[k]}">${(window.SORT_INPUT_LABELS||{})[k]}</button>`).join('')}
+                    ${state.module.demo==='quick-sort'?`<span class="pivot-sep">枢轴</span>
+                      ${[['last','末尾'],['first','首元素'],['median','三数取中'],['random','随机']].map(([k,l])=>`<button class="mini-btn ${(window.AlgoraSortPivot||'last')===k?'active':''}" data-pivot="${k}">${l}</button>`).join('')}`:''}
                   </div>`:''}
                   <select class="speed-select" id="speed" aria-label="动画速度">
                     <option value="1300" ${state.speed===1300?'selected':''}>慢速</option>
@@ -269,6 +271,12 @@
     $('#apply-data').onclick = () => rebuildTrace($('#dataset').value);
     $('#dataset').addEventListener('keydown',e=>{if(e.key==='Enter') rebuildTrace(e.target.value);});
     $$('.sort-input-set .mini-btn').forEach(btn=>btn.onclick=()=>{
+      if(btn.dataset.pivot){
+        window.AlgoraSortPivot=btn.dataset.pivot;
+        $$('.sort-input-set .mini-btn[data-pivot]').forEach(b=>b.classList.toggle('active',b===btn));
+        rebuildTrace($('#dataset').value);
+        return;
+      }
       const gen=window.SORT_INPUTS&&window.SORT_INPUTS[btn.dataset.inputset];
       if(gen) rebuildTrace(gen().join(', '));
     });
@@ -660,7 +668,13 @@
   }
 
   function renderHuffman(v) {
-    return `<div class="huffman-visual">${v.groups.map((g,i)=>`<div class="huffman-weight ${v.active?.includes(i)?'active':''}">${g.join('+')}</div>`).join('')}</div>`;
+    const groupsHtml=`<div class="huffman-visual">${v.groups.map((g,i)=>`<div class="huffman-weight ${v.active?.includes(i)?'active':''}">${g.w}${v.mergeStep&&v.active?.includes(i)?`<small>${v.mergeStep}</small>`:''}</div>`).join('')}${v.mergeStep&&!v.active?.length?`<div class="huffman-merge">${v.mergeStep}</div>`:''}</div>`;
+    let codesHtml='';
+    if(v.codes){
+      const rows=Object.entries(v.codes).map(([id,code])=>{const w=v.weights[Number(id.slice(1))];return `<span class="h-code"><b>${id}</b> (权${w}) → <i>${code}</i></span>`;}).join('');
+      codesHtml=`<div class="huffman-codes"><div class="huffman-codes-title">哈夫曼编码（前缀码 · WPL=${v.wpl}）</div><div class="huffman-codes-grid">${rows}</div></div>`;
+    }
+    return groupsHtml+codesHtml;
   }
 
   function renderHash(v) {
